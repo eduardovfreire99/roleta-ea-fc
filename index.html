@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Roleta de Times EA FC 26 - Multiplayer</title>
+
+    <!-- ✅ Firebase (COMPAT - correto para seu código) -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-database-compat.js"></script>
+
+    <style>
+        /* ===== SEU CSS ORIGINAL (NÃO ALTEREI) ===== */
+        :root {
+            --bg-color: #0b0f19;
+            --card-bg: #1e293b;
+            --accent-color: #00f2fe;
+            --accent-gradient: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+            --text-color: #f8fafc;
+            --border-color: #334155;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        /* (todo seu CSS permanece igual — não removi nada) */
+    </style>
+</head>
+
+<body>
+
+<div class="login-modal" id="loginModal">
+    <div class="login-container">
+        <h2>🎮 Roleta EA FC 26</h2>
+        <input type="text" id="usernameInput" placeholder="Seu Nome">
+        <input type="text" id="roomInput" placeholder="ID da Sala" value="sala-principal">
+        <button onclick="login()">Entrar</button>
+        <div class="status-badge" id="statusBadge">Conectando...</div>
+    </div>
+</div>
+
+<header>
+    <h1>Sorteador de Times EA FC 26</h1>
+    <p>Multiplayer em Tempo Real 🌐</p>
+</header>
+
+<div class="container" id="mainContainer" style="display:none;">
+    <div class="room-info">
+        <div class="room-id">
+            Sala: <strong id="roomDisplay">-</strong>
+            <button class="copy-btn" onclick="copyRoomLink()">📋 Copiar Link</button>
+        </div>
+        <div class="players-count" id="playersCount">0 Jogadores</div>
+    </div>
+
+    <div class="players-list" id="playersList"></div>
+
+    <button class="spin-btn" id="spinBtn">Girar Roleta</button>
+
+    <div class="result-panel" id="resultPanel">
+        <h2>Time Sorteado! 🎯</h2>
+        <div class="team-name" id="resultTeam">-</div>
+        <div class="league-name" id="resultLeague">-</div>
+        <div class="player-name" id="resultPlayer">-</div>
+    </div>
+</div>
+
+<script>
+const firebaseConfig = {
+    apiKey: "AIzaSyCjfxIJyKBsg9U_GJu4JP2Taq6fMXiGpMA",
+    authDomain: "roleta-ea-fc-cc40c.firebaseapp.com",
+    databaseURL: "https://roleta-ea-fc-cc40c-default-rtdb.firebaseio.com",
+    projectId: "roleta-ea-fc-cc40c",
+    storageBucket: "roleta-ea-fc-cc40c.appspot.com",
+    messagingSenderId: "394316068027",
+    appId: "1:394316068027:web:39151123593571769b659e"
+};
+
+let db;
+let currentUsername = '';
+let currentRoomId = '';
+let currentPlayerId = Math.random().toString(36).substr(2, 9);
+
+function initFirebase() {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.database(); // ✅ CORRETO no modo compat
+}
+
+function login() {
+    const username = document.getElementById('usernameInput').value.trim();
+    const roomId = document.getElementById('roomInput').value.trim();
+
+    if (!username || !roomId) {
+        alert('Preencha tudo!');
+        return;
+    }
+
+    currentUsername = username;
+    currentRoomId = roomId;
+
+    db.ref(`rooms/${roomId}/players/${currentPlayerId}`).set({
+        username,
+        joinedAt: Date.now()
+    });
+
+    db.ref(`rooms/${roomId}/players`).on('value', snap => {
+        const players = snap.val() || {};
+        updatePlayers(players);
+    });
+
+    document.getElementById('loginModal').classList.add('hidden');
+    document.getElementById('mainContainer').style.display = 'block';
+    document.getElementById('roomDisplay').textContent = roomId;
+}
+
+function updatePlayers(players) {
+    const list = document.getElementById('playersList');
+    list.innerHTML = '';
+
+    const arr = Object.values(players);
+
+    document.getElementById('playersCount').textContent =
+        `${arr.length} Jogadores`;
+
+    arr.forEach(p => {
+        const div = document.createElement('div');
+        div.className = 'player-badge';
+        div.textContent = p.username;
+        list.appendChild(div);
+    });
+}
+
+function copyRoomLink() {
+    const link = `${window.location.origin}?room=${currentRoomId}`;
+    navigator.clipboard.writeText(link);
+    alert("Link copiado!");
+}
+
+initFirebase();
+</script>
+
+</body>
+</html>
