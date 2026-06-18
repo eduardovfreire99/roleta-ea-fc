@@ -42,10 +42,13 @@
     .error { color:#ffa3a3; background:rgba(255,163,163,0.06); padding:8px; border-radius:8px; margin-top:8px }
     .muted { color:#94a3b8 }
     .modal-row { display:flex; gap:8px; align-items:center; }
+    #transientNotice { position:fixed; top:12px; right:12px; background:rgba(16,185,129,0.12); color:#a7f3d0; padding:8px 12px; border:1px solid rgba(16,185,129,0.25); border-radius:8px; z-index:9999; display:none }
     @media (max-width:600px) { .roulette-item { min-width:140px } }
   </style>
 </head>
 <body>
+  <div id="transientNotice"></div>
+
   <header>
     <h1>Sorteador de Times EA FC 26</h1>
     <div class="small muted">Multiplayer em tempo real — crie sala ou entre por código</div>
@@ -90,7 +93,7 @@
 
       <div class="controls">
         <label class="small muted">Filtrar liga</label>
-        <!-- leagueSelect será habilitado apenas para host (e sincronizado via DB settings) -->
+        <!-- leagueSelect is disabled for non-hosts; host writes settings to DB -->
         <select id="leagueSelect" class="input">
           <option value="all">Todas as Ligas (96)</option>
           <option value="premier">Premier League</option>
@@ -157,8 +160,11 @@
     let roomHostId = null;
     let isHost = false;
     let hostOnDisconnectRegistered = false;
-    let settingsRef = null; // <-- reference to rooms/{roomId}/settings
+    let settingsRef = null; // reference to rooms/{roomId}/settings
     const GRACE_MS = 15000;
+
+    // pending settings to apply after spin
+    window.__pendingSettings = null;
 
     // DOM
     const usernameInput = document.getElementById('usernameInput');
@@ -187,6 +193,7 @@
     const resultTeam = document.getElementById('resultTeam');
     const resultLeague = document.getElementById('resultLeague');
     const resultPlayer = document.getElementById('resultPlayer');
+    const transientNotice = document.getElementById('transientNotice');
 
     // init firebase
     function initFirebase(){
@@ -206,16 +213,17 @@
 
     // helpers
     function shuffle(a){ return a.sort(()=>Math.random()-0.5); }
-    function getActivePool(){
-      const sel = leagueSelect.value;
+    function getActivePoolFromLeague(leagueValue){
       let pool=[];
-      if (sel==='all') {
+      if (!leagueValue || leagueValue === 'all') {
         Object.keys(teamsDB).forEach(k => teamsDB[k].teams.forEach(t => pool.push({ name: t, league: teamsDB[k].name })));
       } else {
-        teamsDB[sel].teams.forEach(t => pool.push({ name: t, league: teamsDB[sel].name }));
+        if (teamsDB[leagueValue]) teamsDB[leagueValue].teams.forEach(t => pool.push({ name: t, league: teamsDB[leagueValue].name }));
       }
       return pool;
     }
+    function getActivePool(){ return getActivePoolFromLeague(leagueSelect.value); }
+
     function updatePoolInfo(){
       currentPool = getActivePool();
       poolInfo.textContent = `${currentPool.length} times disponíveis`;
@@ -236,13 +244,38 @@
     }
 
     // unique numeric room generator (6 digits)
-    async function generateUniqueRoomCode(attempts = 6) {
+    async function generateUniqueRoomCode(attempts = 8) {
       for (let i = 0; i < attempts; i++) {
-        const code = Math.floor(Math.random() * 1000000).toString().padStart(6, '0'); // "000000" - "999999"
+        const code = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
         const snap = await db.ref(`rooms/${code}`).get();
         if (!snap.exists()) return code;
       }
       throw new Error('Não foi possível gerar código único. Tente novamente.');
+    }
+
+    // transient notice
+    function showTransientNotice(msg, ms = 2500) {
+      transientNotice.textContent = msg;
+      transientNotice.style.display = 'block';
+      setTimeout(() => { transientNotice.style.display = 'none'; }, ms);
+    }
+
+    // APPLY SETTINGS (called when settingsRef changes)
+    function applySettings(settings) {
+      if (!settings) return;
+      // league
+      if (typeof settings.league !== 'undefined') {
+        // if currently spinning, defer application
+        if (isSpinning) {
+          window.__pendingSettings = settings;
+          showTransientNotice('Configurações alteradas pelo host — serão aplicadas após o giro');
+        } else {
+          leagueSelect.value = settings.league || 'all';
+          updatePoolInfo();
+          showTransientNotice(`Host mudou a liga para: ${settings.league}`, 1800);
+        }
+      }
+      // add other settings keys here (animationDuration, etc.)
     }
 
     // CREATE ROOM
@@ -260,7 +293,7 @@
         await hostNode.set(hostObj);
         try { hostNode.onDisconnect().update({ online:false, lastSeen: firebase.database.ServerValue.TIMESTAMP }); hostOnDisconnectRegistered = true; } catch(e){}
 
-        // initialize settings (host-only writable). default league='all'
+        // initialize settings (default)
         await db.ref(`rooms/${code}/settings`).set({ league: 'all' });
 
         localStorage.setItem(KEY_ROOM, code);
@@ -316,14 +349,14 @@
       joinError.classList.remove('hidden');
     }
 
-    // ENTER ROOM (join or after create)
+    // ENTER ROOM
     async function enterRoom(code, createdAsHost = false) {
       document.getElementById('loginArea').style.display = 'none';
       roomArea.classList.remove('hidden');
       roomDisplay.textContent = code;
       currentRoomId = code;
 
-      // presence
+      // presence (player)
       playerRef = db.ref(`rooms/${code}/players/${currentPlayerId}`);
       connectedRef = db.ref('.info/connected');
 
@@ -360,16 +393,17 @@
         setTimeout(() => electHostIfNeeded(), Math.floor(Math.random()*400));
       });
 
-      // settings reference & listener (new)
+      // settings reference & real-time listener
       settingsRef = db.ref(`rooms/${code}/settings`);
       settingsRef.on('value', snap => {
-        const s = snap.val() || { league: 'all' };
-        // update select to server value
-        leagueSelect.value = s.league || 'all';
-        // ensure UI uses server settings
-        updatePoolInfo();
-        // enable select only for host
-        leagueSelect.disabled = !isHost;
+        const settings = snap.val() || { league: 'all' };
+        // apply immediately or defer if spinning
+        if (isSpinning) {
+          window.__pendingSettings = settings;
+          showTransientNotice('Host mudou configurações — serão aplicadas após o giro', 2000);
+        } else {
+          applySettings(settings);
+        }
       });
 
       // players and other listeners
@@ -397,7 +431,7 @@
       setupSpinListener();
       updatePoolInfo();
 
-      // handlers for share/copy/leave
+      // handlers
       copyRoomBtn.onclick = () => { navigator.clipboard.writeText(code).then(()=>alert('Código copiado!')); };
       shareBtn.onclick = () => {
         const link = `${window.location.origin}${window.location.pathname}?room=${code}`;
@@ -498,6 +532,7 @@
         showResult({ winner: winner.name, league: winner.league, username: currentUsername });
         isSpinning = false;
         spinBtn.disabled = false;
+        onSpinFinished();
       }, spinData.duration);
     }
 
@@ -537,6 +572,7 @@
           const targetX = -(d.targetIndex * ITEM_WIDTH) + centerOffset;
           rouletteContainer.style.transition='none';
           rouletteContainer.style.transform = `translateX(${targetX}px)`;
+          onSpinFinished();
           return;
         }
         requestAnimationFrame(()=>requestAnimationFrame(()=> {
@@ -548,7 +584,7 @@
         }));
         spinIndicator.classList.remove('hidden');
         spinBtn.disabled = true;
-        setTimeout(()=>{ spinIndicator.classList.add('hidden'); if (!isSpinning) spinBtn.disabled = false; }, remaining + 50);
+        setTimeout(()=>{ spinIndicator.classList.add('hidden'); if (!isSpinning) spinBtn.disabled = false; onSpinFinished(); }, remaining + 50);
       });
     }
 
@@ -561,24 +597,29 @@
       if (!isSpinning) spinBtn.disabled = false;
     }
 
-    // LEAGUE SELECT: host-only writes to DB settings; everyone listens and applies
+    // Apply pending settings after spin finishes
+    function onSpinFinished() {
+      isSpinning = false;
+      if (window.__pendingSettings) {
+        applySettings(window.__pendingSettings);
+        window.__pendingSettings = null;
+      }
+    }
+
+    // LEAGUE SELECT: host-only writes to DB settings; everyone listens and applies.
     leagueSelect.addEventListener('change', () => {
+      const newLeague = leagueSelect.value;
       if (!currentRoomId) return;
-      // Only host can write settings
-      if (isHost) {
-        // write new setting to DB
-        db.ref(`rooms/${currentRoomId}/settings`).set({ league: leagueSelect.value }).catch(err => {
-          console.warn('Erro ao atualizar settings:', err);
-        });
+      if (isHost && settingsRef) {
+        settingsRef.update({ league: newLeague }).catch(err => console.warn('Erro ao atualizar settings:', err));
       } else {
-        // revert to server value (defensive)
+        // non-host: revert to server value (defensive)
         if (settingsRef) {
           settingsRef.get().then(snap => {
-            const s = snap.val() || { league: 'all' };
+            const s = snap.val() || {};
             leagueSelect.value = s.league || 'all';
-          }).catch(()=>{ leagueSelect.value = 'all'; });
-        } else {
-          leagueSelect.value = 'all';
+            updatePoolInfo();
+          }).catch(()=>{ leagueSelect.value = 'all'; updatePoolInfo(); });
         }
       }
       updatePoolInfo();
@@ -604,6 +645,7 @@
         hostOnDisconnectRegistered = false;
       }
       if (hostRef) { try { hostRef.off(); hostRef = null; } catch(e){} }
+      if (settingsRef) { try { settingsRef.off(); settingsRef = null; } catch(e){} }
       localStorage.removeItem(KEY_ROOM);
       currentRoomId = '';
       document.getElementById('loginArea').style.display = 'flex';
@@ -612,10 +654,9 @@
 
     // bindings
     spinBtn.addEventListener('click', doSpin);
-    leagueSelect.addEventListener('change', updatePoolInfo);
     joinCodeInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') confirmJoinBtn.click(); });
 
-    // auto-fill stored name and optionally room
+    // auto-fill stored name and optionally room param
     const storedName = localStorage.getItem(KEY_NAME);
     if (storedName) usernameInput.value = storedName;
 
@@ -632,7 +673,7 @@
       try { if (playerRef) playerRef.update({ online:false, lastSeen: firebase.database.ServerValue.TIMESTAMP }); } catch(e){}
     });
 
-    // expose create/join controls to global (optional) for debugging
+    // Expose a couple of helpers (optional)
     window.__roleta = { db, generateUniqueRoomCode };
   </script>
 </body>
