@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Roleta EA FC 26 — Multiplayer (Turnos + Host controls)</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Roleta EA FC 26 — Turnos & Host</title>
 
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-database-compat.js"></script>
@@ -25,6 +25,7 @@
     .player{background:#0f172a;padding:6px 10px;border-radius:8px;border:1px solid var(--border);color:#cbd5e1}
     .player.turn{border-color:#10b981;box-shadow:0 0 8px rgba(16,185,129,0.12)}
     .player.host{background:linear-gradient(135deg,#fef3c7,#fde68a);color:#452a00;font-weight:800}
+    .player.inactive{opacity:0.55}
     .roulette-wrapper{margin-top:14px;position:relative;height:120px;border-radius:10px;background:#0f172a;overflow:hidden;border:2px solid var(--border)}
     .roulette-wrapper::before{content:'';position:absolute;left:50%;top:0;width:4px;height:100%;background:#ff0055;transform:translateX(-50%);z-index:10}
     .roulette-container{position:absolute;left:0;top:0;height:100%;display:flex;align-items:center;will-change:transform}
@@ -43,26 +44,25 @@
 
   <header>
     <h1>Roleta EA FC 26 — Turnos</h1>
-    <div class="small muted">Host controla a sala; roleta por turnos; sala é removida se host fechar a aba</div>
+    <div class="small muted">Host controla a sala; roleta por turnos; sala fecha quando host desconecta</div>
   </header>
 
   <div class="card">
-    <!-- login area -->
+    <!-- LOGIN AREA -->
     <div id="loginArea" style="display:flex;flex-direction:column;gap:10px">
       <div class="modal-row">
-        <input id="usernameInput" class="input" placeholder="Seu nome" />
+        <input id="usernameInput" class="input" placeholder="Seu nome"/>
         <button id="createBtn" class="btn create">Criar Sala</button>
         <button id="showJoinBtn" class="btn enter">Entrar</button>
       </div>
-
-      <div id="joinBox" class="modal-row hidden">
-        <input id="joinCodeInput" class="input" placeholder="Código da sala (6 dígitos)" />
+      <div id="joinBox" class="modal-row hidden" style="margin-top:6px">
+        <input id="joinCodeInput" class="input" placeholder="Código da sala (6 dígitos)"/>
         <button id="confirmJoinBtn" class="btn enter">Confirmar</button>
-        <div id="joinError" class="hidden" style="color:#ffa3a3;margin-left:8px"></div>
+        <div id="joinError" class="small" style="color:#ffa3a3;margin-left:8px;display:none"></div>
       </div>
     </div>
 
-    <!-- room area -->
+    <!-- ROOM AREA -->
     <div id="roomArea" class="hidden">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
         <div style="display:flex;align-items:center;gap:12px">
@@ -70,7 +70,6 @@
           <div id="roomDisplay" style="font-weight:800">-</div>
           <div id="turnInfo" class="small muted" style="margin-left:12px"></div>
         </div>
-
         <div style="display:flex;align-items:center;gap:8px">
           <div id="playersCount" class="small muted">0 jogadores</div>
           <div id="shareControls" style="display:none">
@@ -116,6 +115,7 @@
   </div>
 
   <script>
+    // Firebase config (mantive o seu)
     const firebaseConfig = {
       apiKey: "AIzaSyCjfxIJyKBsg9U_GJu4JP2Taq6fMXiGpMA",
       authDomain: "roleta-ea-fc-cc40c.firebaseapp.com",
@@ -131,6 +131,7 @@
     const KEY_NAME = 'roleta_username';
     const KEY_ROOM = 'roleta_room_id';
 
+    // identity
     let currentPlayerId = localStorage.getItem(KEY_PLAYER);
     if (!currentPlayerId) {
       currentPlayerId = Math.random().toString(36).substr(2,9);
@@ -144,7 +145,7 @@
     let isSpinning = false;
     const ITEM_WIDTH = 190;
 
-    // presence & host
+    // presence/host/settings
     let playerRef = null;
     let connectedRef = null;
     let onDisconnectRegistered = false;
@@ -155,10 +156,8 @@
     let settingsRef = null;
     const GRACE_MS = 15000;
 
-    // turn-order
-    // turnOrder and currentTurnIndex live in DB:
-    // rooms/{roomId}/turnOrder = [playerId,...]
-    // rooms/{roomId}/currentTurnIndex = integer
+    // turn order cached
+    let latestTurnOrder = [];
 
     // DOM refs
     const usernameInput = document.getElementById('usernameInput');
@@ -192,10 +191,7 @@
     const hostStatus = document.getElementById('hostStatus');
 
     // init firebase
-    function initFirebase(){
-      const app = firebase.initializeApp(firebaseConfig);
-      db = firebase.database(app);
-    }
+    function initFirebase(){ const app = firebase.initializeApp(firebaseConfig); db = firebase.database(app); }
     initFirebase();
 
     // teams DB
@@ -220,160 +216,110 @@
     }
     function getActivePool(){ return getActivePoolFromLeague(leagueSelect.value); }
 
-    function updatePoolInfo(){
-      currentPool = getActivePool();
-      poolInfo.textContent = `${currentPool.length} times disponíveis`;
-      setupStaticRoulette();
-    }
-    function setupStaticRoulette(){
-      const pool = getActivePool();
-      rouletteContainer.style.transition='none';
-      rouletteContainer.style.transform='translateX(0px)';
-      rouletteContainer.innerHTML='';
-      const display = pool.length>5 ? pool.slice(0,10) : [...pool,...pool,...pool];
-      display.forEach(it => {
-        const d = document.createElement('div');
-        d.className = 'roulette-item';
-        d.innerHTML = `<div>${it.name}</div><div style="font-size:0.7rem;color:#94a3b8;margin-top:4px">${it.league}</div>`;
-        rouletteContainer.appendChild(d);
-      });
-    }
+    function updatePoolInfo(){ currentPool = getActivePool(); poolInfo.textContent = `${currentPool.length} times disponíveis`; setupStaticRoulette(); }
+    function setupStaticRoulette(){ const pool = getActivePool(); rouletteContainer.style.transition='none'; rouletteContainer.style.transform='translateX(0px)'; rouletteContainer.innerHTML=''; const display = pool.length>5 ? pool.slice(0,10) : [...pool,...pool,...pool]; display.forEach(it => { const d = document.createElement('div'); d.className = 'roulette-item'; d.innerHTML = `<div>${it.name}</div><div style="font-size:0.7rem;color:#94a3b8;margin-top:4px">${it.league}</div>`; rouletteContainer.appendChild(d); }); }
 
-    // generate unique 6-digit numeric code
     async function generateUniqueRoomCode(attempts = 8) {
-      for (let i = 0; i < attempts; i++) {
-        const code = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
+      for (let i=0;i<attempts;i++) {
+        const code = Math.floor(Math.random()*1000000).toString().padStart(6,'0');
         const snap = await db.ref(`rooms/${code}`).get();
         if (!snap.exists()) return code;
       }
-      throw new Error('Não foi possível gerar código único. Tente novamente.');
+      throw new Error('Não foi possível gerar código único');
     }
 
-    function showNotice(msg, ms = 2500){
-      notice.textContent = msg;
-      notice.style.display = 'block';
-      setTimeout(()=> notice.style.display = 'none', ms);
-    }
+    function showNotice(msg, ms = 2500){ notice.textContent = msg; notice.style.display = 'block'; setTimeout(()=> notice.style.display = 'none', ms); }
 
-    // apply settings received from DB (league etc)
-    function applySettings(settings) {
+    // APPLY SETTINGS
+    function applySettings(settings){
       if (!settings) return;
       if (typeof settings.league !== 'undefined') {
-        if (isSpinning) {
-          // defer
-          window.__pendingSettings = settings;
-          showNotice('Configurações alteradas pelo host — serão aplicadas após o giro', 2200);
-        } else {
-          leagueSelect.value = settings.league || 'all';
-          updatePoolInfo();
-          showNotice(`Host mudou a liga para: ${settings.league}`, 1500);
-        }
+        leagueSelect.value = settings.league || 'all';
+        updatePoolInfo();
+        showNotice(`Host mudou a liga para: ${settings.league}`, 1400);
       }
-      // handle other keys similarly
     }
 
-    // create room (host)
+    // VISIBILITY (active flag)
+    function setActiveFlag(active) {
+      if (!playerRef) return;
+      playerRef.update({ active: !!active }).catch(()=>{});
+    }
+    document.addEventListener('visibilitychange', () => {
+      const active = document.visibilityState === 'visible';
+      setActiveFlag(active);
+    });
+
+    // CREATE ROOM
     document.getElementById('createBtn').addEventListener('click', async () => {
       const name = usernameInput.value.trim();
       if (!name) { alert('Digite seu nome antes de criar a sala.'); return; }
       currentUsername = name;
       localStorage.setItem(KEY_NAME, name);
-
       createBtn.disabled = true;
       try {
         const code = await generateUniqueRoomCode();
         const hostNode = db.ref(`rooms/${code}/host`);
         const hostObj = { playerId: currentPlayerId, username: currentUsername, online: true, createdAt: firebase.database.ServerValue.TIMESTAMP };
         await hostNode.set(hostObj);
-        try {
-          // remove whole room if host disconnects (close tab or lose connection)
-          db.ref(`rooms/${code}`).onDisconnect().remove();
-        } catch(e) { console.warn('onDisconnect room remove failed', e); }
+        try { db.ref(`rooms/${code}`).onDisconnect().remove(); } catch(e){ console.warn(e); }
 
-        // init settings and turnOrder/currentTurnIndex
         await db.ref(`rooms/${code}/settings`).set({ league: 'all' });
         await db.ref(`rooms/${code}/turnOrder`).set([currentPlayerId]);
         await db.ref(`rooms/${code}/currentTurnIndex`).set(0);
 
         localStorage.setItem(KEY_ROOM, code);
         await enterRoom(code, true);
-      } catch(err) {
-        console.error(err);
-        alert('Erro ao criar sala. Tente novamente.');
-        createBtn.disabled = false;
-      }
+      } catch(e){ console.error(e); alert('Erro ao criar sala'); createBtn.disabled = false; }
     });
 
-    // show join box
-    showJoinBtn.addEventListener('click', () => {
-      joinError.classList.add('hidden');
-      joinBox.classList.toggle('hidden');
-      if (!joinBox.classList.contains('hidden')) joinCodeInput.focus();
-    });
+    // SHOW/HIDE JOIN
+    showJoinBtn.addEventListener('click', () => { joinError.style.display = 'none'; joinBox.classList.toggle('hidden'); if (!joinBox.classList.contains('hidden')) joinCodeInput.focus(); });
 
-    // confirm join
+    // CONFIRM JOIN
     confirmJoinBtn.addEventListener('click', async () => {
       const code = (joinCodeInput.value || '').trim();
-      if (!/^\d{6}$/.test(code)) {
-        joinError.textContent = 'Código inválido — use 6 dígitos numéricos.';
-        joinError.classList.remove('hidden');
-        return;
-      }
-      joinError.classList.add('hidden');
-
+      if (!/^\d{6}$/.test(code)) { joinError.textContent = 'Código inválido — 6 dígitos'; joinError.style.display = 'block'; return; }
+      joinError.style.display = 'none';
       try {
         const roomSnap = await db.ref(`rooms/${code}`).get();
-        if (!roomSnap.exists()) {
-          joinError.textContent = 'Sala não encontrada.';
-          joinError.classList.remove('hidden');
-          return;
-        }
+        if (!roomSnap.exists()) { joinError.textContent='Sala não encontrada.'; joinError.style.display='block'; return; }
         const hostSnap = await db.ref(`rooms/${code}/host`).get();
         const hostVal = hostSnap.val();
-        if (!hostVal || hostVal.online !== true) {
-          joinError.textContent = 'Sala sem host disponível. Tente novamente mais tarde.';
-          joinError.classList.remove('hidden');
-          return;
-        }
-
-        localStorage.setItem(KEY_ROOM, code);
+        if (!hostVal || hostVal.online !== true) { joinError.textContent='Sala sem host disponível.'; joinError.style.display='block'; return; }
         currentUsername = usernameInput.value.trim();
-        if (!currentUsername) { joinError.textContent = 'Digite seu nome.'; joinError.classList.remove('hidden'); return; }
+        if (!currentUsername) { joinError.textContent='Digite seu nome.'; joinError.style.display='block'; return; }
         localStorage.setItem(KEY_NAME, currentUsername);
+        localStorage.setItem(KEY_ROOM, code);
         await enterRoom(code, false);
-      } catch(e) {
-        console.error(e);
-        joinError.textContent = 'Erro ao entrar — tente novamente.';
-        joinError.classList.remove('hidden');
-      }
+      } catch(e){ console.error(e); joinError.textContent='Erro ao entrar'; joinError.style.display='block'; }
     });
 
-    function showJoinError(msg){ joinError.textContent = msg; joinError.classList.remove('hidden'); }
-
-    // enter room (join or create)
-    async function enterRoom(code, createdAsHost=false) {
+    // ENTER ROOM: common
+    async function enterRoom(code, createdAsHost=false){
       document.getElementById('loginArea').style.display = 'none';
       roomArea.classList.remove('hidden');
       roomDisplay.textContent = code;
       currentRoomId = code;
 
-      // presence: player node
+      // player presence
       playerRef = db.ref(`rooms/${code}/players/${currentPlayerId}`);
       connectedRef = db.ref('.info/connected');
 
       connectedRef.on('value', snap => {
         if (snap && snap.val() === true) {
           if (!onDisconnectRegistered && playerRef) {
-            try { playerRef.onDisconnect().update({ online:false, lastSeen: firebase.database.ServerValue.TIMESTAMP }); } catch(e){ console.warn(e); }
+            try { playerRef.onDisconnect().update({ online:false, lastSeen: firebase.database.ServerValue.TIMESTAMP, active:false }); } catch(e){}
             onDisconnectRegistered = true;
           }
           if (playerRef) {
-            playerRef.set({ username: currentUsername, joinedAt: firebase.database.ServerValue.TIMESTAMP, online: true }).catch(()=>{});
+            const activeNow = document.visibilityState === 'visible';
+            playerRef.set({ username: currentUsername, joinedAt: firebase.database.ServerValue.TIMESTAMP, online:true, active: activeNow }).catch(()=>{});
           }
         }
       });
 
-      // host ref and listener
+      // host ref
       hostRef = db.ref(`rooms/${code}/host`);
       hostRef.on('value', snap => {
         const v = snap.val();
@@ -388,43 +334,36 @@
               hostRef.onDisconnect().update({ online:false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
               hostOnDisconnectRegistered = true;
             }
-            // ensure room removal on host disconnect (redundant if set at creation)
             try { db.ref(`rooms/${code}`).onDisconnect().remove(); } catch(e){}
           } catch(e){}
         }
       });
 
-      // settings ref: listen and apply immediately
+      // settings
       settingsRef = db.ref(`rooms/${code}/settings`);
       settingsRef.on('value', snap => {
-        const settings = snap.val() || { league: 'all' };
-        // apply or defer if spinning
-        if (isSpinning) {
-          window.__pendingSettings = settings;
-          showNotice('Host mudou configurações — serão aplicadas após o giro');
-        } else {
-          applySettings(settings);
-        }
+        const settings = snap.val() || { league:'all' };
+        if (isSpinning) { window.__pendingSettings = settings; showNotice('Host mudou configurações — serão aplicadas após o giro'); }
+        else applySettings(settings);
       });
 
-      // ensure this player is in turnOrder (transaction append-if-not-present)
+      // ensure in turnOrder (transaction append if not present)
       db.ref(`rooms/${code}/turnOrder`).transaction(current => {
         if (!current) return [currentPlayerId];
         if (!Array.isArray(current)) return [currentPlayerId];
-        if (current.indexOf(currentPlayerId) === -1) {
-          current.push(currentPlayerId);
-        }
+        if (current.indexOf(currentPlayerId) === -1) current.push(currentPlayerId);
         return current;
       });
 
-      // listen turnOrder and currentTurnIndex
+      // listeners: turnOrder and currentTurnIndex
       db.ref(`rooms/${code}/turnOrder`).on('value', snap => {
-        const order = snap.val() || [];
-        renderTurnOrder(order);
+        latestTurnOrder = snap.val() || [];
+        renderTurnUI();
       });
       db.ref(`rooms/${code}/currentTurnIndex`).on('value', snap => {
         const idx = snap.val();
         updateTurnInfo(idx);
+        renderTurnUI();
       });
 
       // players list
@@ -433,28 +372,20 @@
         renderPlayers(players);
       });
 
-      // last result
-      db.ref(`rooms/${code}/lastResult`).on('value', snap => {
-        const r = snap.val();
-        if (r) showResult(r);
-      });
+      // lastResult
+      db.ref(`rooms/${code}/lastResult`).on('value', snap => { const r = snap.val(); if (r) showResult(r); });
 
-      // isSpinning indicator
+      // isSpinning
       db.ref(`rooms/${code}/isSpinning`).on('value', snap => {
         const s = snap.val();
-        if (s && s.playerId !== currentPlayerId) {
-          spinIndicator.classList.remove('hidden');
-          spinBtn.disabled = true;
-        } else {
-          spinIndicator.classList.add('hidden');
-          if (!isSpinning) spinBtn.disabled = false;
-        }
+        if (s && s.playerId !== currentPlayerId) { spinIndicator.classList.remove('hidden'); spinBtn.disabled = true; }
+        else { spinIndicator.classList.add('hidden'); if (!isSpinning) spinBtn.disabled = false; }
       });
 
       setupSpinListener();
       updatePoolInfo();
 
-      // share/copy/leave handlers
+      // share/copy/leave
       copyRoomBtn.onclick = () => { navigator.clipboard.writeText(code).then(()=>alert('Código copiado!')); };
       shareBtn.onclick = () => {
         const link = `${window.location.origin}${window.location.pathname}?room=${code}`;
@@ -464,7 +395,7 @@
       leaveBtn.onclick = leaveRoomCleanup;
     }
 
-    // render players
+    // render players (and mark active/inactive)
     function renderPlayers(players) {
       playersList.innerHTML = '';
       const arr = Object.entries(players).map(([id,data]) => ({ id, ...data }));
@@ -473,139 +404,81 @@
         const el = document.createElement('div');
         el.className = 'player';
         if (p.id === roomHostId) el.classList.add('host');
-        el.textContent = p.username + (p.id === currentPlayerId ? ' (Você)' : '') + (p.online === false ? ' (offline)' : '');
+        if (p.active === false) el.classList.add('inactive');
+        el.textContent = `${p.username || 'Jogador'}${p.id === currentPlayerId ? ' (Você)' : ''}${p.online === false ? ' (offline)' : ''}${p.active === false ? ' (inativo)' : ''}`;
         playersList.appendChild(el);
       });
-      // also highlight current turn in renderTurnOrder (handled separately)
-    }
-
-    // render turn order UI (and highlight current turn later)
-    let latestTurnOrder = [];
-    function renderTurnOrder(order) {
-      latestTurnOrder = Array.isArray(order) ? order : [];
-      // update turn info label based on currentTurnIndex value (read from DB listener)
-      // highlight in playersList by adding .turn class
-      const children = playersList.children;
-      for (let i=0;i<children.length;i++) {
-        children[i].classList.remove('turn');
-      }
-      // find player element for currentTurn
-      db.ref(`rooms/${currentRoomId}/currentTurnIndex`).get().then(snap => {
-        const idx = snap.val();
-        if (idx != null && latestTurnOrder[idx]) {
-          const id = latestTurnOrder[idx];
-          // find DOM element for that id by matching text (best-effort)
-          for (let i=0;i<children.length;i++) {
-            if (children[i].textContent.includes(id) || children[i].textContent.includes('(Você)') && id === currentPlayerId) {
-              // leave as best-effort; we can't map id to element reliably without storing data-id; skip detailed highlight
-            }
+      // highlight current turn
+      const idxRef = db.ref(`rooms/${currentRoomId}/currentTurnIndex`);
+      idxRef.get().then(snap => {
+        const idx = snap.val() || 0;
+        const currentId = latestTurnOrder[idx];
+        // add .turn to matching element by text match (best-effort)
+        for (let c of playersList.children) {
+          c.classList.remove('turn');
+          const text = c.textContent || '';
+          if (currentId && text.includes(currentId) || (currentId === currentPlayerId && text.includes('(Você)'))) {
+            c.classList.add('turn');
           }
         }
       }).catch(()=>{});
     }
 
-    // update turn info text
-    function updateTurnInfo(idx) {
-      if (!Array.isArray(latestTurnOrder) || latestTurnOrder.length === 0) {
-        turnInfo.textContent = '';
-        return;
-      }
-      const index = typeof idx === 'number' ? idx : 0;
-      const pid = latestTurnOrder[index];
-      let display = pid === currentPlayerId ? 'Sua vez de girar' : `Vez de ${pid}`;
-      // resolve pid -> username if available in players list
+    // render turn-specific UI (turnInfo)
+    function renderTurnUI(){
+      db.ref(`rooms/${currentRoomId}/currentTurnIndex`).get().then(snap => {
+        const idx = snap.val() || 0;
+        updateTurnInfo(idx);
+        // highlight in players list handled in renderPlayers
+      }).catch(()=>{});
+    }
+    function updateTurnInfo(idx){
+      if (!Array.isArray(latestTurnOrder) || latestTurnOrder.length === 0) { turnInfo.textContent = ''; return; }
+      const wrapped = (typeof idx === 'number') ? idx % latestTurnOrder.length : 0;
+      const pid = latestTurnOrder[wrapped];
       db.ref(`rooms/${currentRoomId}/players/${pid}`).get().then(snap => {
         const p = snap.val();
-        if (p && p.username) {
-          display = pid === currentPlayerId ? 'Sua vez de girar' : `Vez de ${p.username}`;
-        }
-        turnInfo.textContent = display;
-      }).catch(()=>{ turnInfo.textContent = display; });
+        const name = p && p.username ? p.username : pid;
+        if (pid === currentPlayerId) turnInfo.textContent = 'Sua vez de girar';
+        else turnInfo.textContent = `Vez de ${name}`;
+      }).catch(()=>{ turnInfo.textContent = ''; });
     }
 
-    // advance turn index after a spin (transactional)
-    async function advanceTurn() {
-      const idxRef = db.ref(`rooms/${currentRoomId}/currentTurnIndex`);
-      const orderRef = db.ref(`rooms/${currentRoomId}/turnOrder`);
-      await idxRef.transaction(current => {
-        if (current === null || current === undefined) return 0;
-        return current + 1;
-      }, (err, committed, snap) => {
-        if (err) console.warn('advanceTurn idx transaction error', err);
-      });
-
-      // normalize index by length (transaction for safe wrap)
-      await db.ref(`rooms/${currentRoomId}`).transaction(room => {
-        if (!room) return;
-        const order = room.turnOrder || [];
-        if (!Array.isArray(order) || order.length === 0) {
-          room.currentTurnIndex = 0;
-          return room;
-        }
-        let idx = room.currentTurnIndex || 0;
-        // wrap
-        if (idx >= order.length) idx = idx % order.length;
-        room.currentTurnIndex = idx;
-        return room;
-      }, (err, committed, snap)=> { if (err) console.warn('wrap tx err', err); });
-    }
-
-    // remove player from turnOrder when leaving
-    async function removePlayerFromTurnOrder(playerId) {
-      const orderRef = db.ref(`rooms/${currentRoomId}/turnOrder`);
-      const idxRef = db.ref(`rooms/${currentRoomId}/currentTurnIndex`);
-      await orderRef.transaction(current => {
-        if (!current || !Array.isArray(current)) return current;
-        const newArr = current.filter(id => id !== playerId);
-        return newArr;
-      }, (err, committed, snap) => {
-        if (err) console.warn('turnOrder removal err', err);
-        else {
-          // adjust currentTurnIndex
-          idxRef.get().then(snapIdx => {
-            let idx = snapIdx.val() || 0;
-            const arr = snap.val() || [];
-            if (idx >= arr.length) idx = idx % (arr.length || 1);
-            idxRef.set(idx).catch(()=>{});
-          }).catch(()=>{});
-        }
-      });
-    }
-
-    // start spin: allowed only if it's your turn and host online
-    async function doSpin() {
+    // spin flow: check host online + all players active + correct turn
+    async function doSpin(){
+      if (!currentRoomId) return;
       if (isSpinning) return;
-      // check host online
+
+      // check host presence and active
       const hostSnap = await db.ref(`rooms/${currentRoomId}/host`).get();
       const hostVal = hostSnap.val();
-      if (!hostVal || hostVal.online !== true) {
-        alert('Aguardando host para girar a roleta.');
-        return;
-      }
+      if (!hostVal || hostVal.online !== true) { alert('Aguardando host para girar a roleta'); return; }
+
+      // get players list and ensure all are online && active
+      const playersSnap = await db.ref(`rooms/${currentRoomId}/players`).get();
+      const players = playersSnap.val() || {};
+      const playerEntries = Object.entries(players);
+      if (playerEntries.length === 0) { alert('Nenhum jogador na sala'); return; }
+      const allActive = playerEntries.every(([id,p]) => p && p.online === true && p.active === true);
+      if (!allActive) { alert('Aguardando todos os jogadores ativos na aba para girar a roleta'); return; }
+
       // check turn
       const orderSnap = await db.ref(`rooms/${currentRoomId}/turnOrder`).get();
       const order = orderSnap.val() || [];
       const idxSnap = await db.ref(`rooms/${currentRoomId}/currentTurnIndex`).get();
       const idx = idxSnap.val() || 0;
       const currentPid = order[idx];
-      if (currentPid !== currentPlayerId) {
-        alert('Não é a sua vez de girar.');
-        return;
-      }
+      if (currentPid !== currentPlayerId) { alert('Não é a sua vez de girar.'); return; }
 
-      const pool = getActivePool();
-      if (pool.length === 0) { alert('Nenhum time disponível'); return; }
-
-      // perform spin
+      // okay: proceed spin
       isSpinning = true;
       spinBtn.disabled = true;
       resultPanel.style.display = 'none';
+      await db.ref(`rooms/${currentRoomId}/isSpinning`).set({ playerId: currentPlayerId, username: currentUsername, startTime: Date.now() });
 
-      db.ref(`rooms/${currentRoomId}/isSpinning`).set({ playerId: currentPlayerId, username: currentUsername, startTime: Date.now() });
-
+      const pool = getActivePool();
       const winnerIndex = Math.floor(Math.random()*pool.length);
       const winner = pool[winnerIndex];
-
       let extended=[];
       for (let i=0;i<4;i++) extended = extended.concat(shuffle([...pool]));
       const targetIndex = Math.min(60, extended.length-10);
@@ -614,7 +487,6 @@
       const spinData = { items: extended.map(it=>({name:it.name,league:it.league})), targetIndex, duration:5000, startTime:Date.now(), playerId:currentPlayerId, username:currentUsername };
       await db.ref(`rooms/${currentRoomId}/spinData`).set(spinData);
 
-      // animate locally
       renderSpinItems(spinData.items);
       animateToIndex(spinData.targetIndex, spinData.duration);
 
@@ -624,19 +496,12 @@
         await db.ref(`rooms/${currentRoomId}/spinData`).remove();
         showResult({ winner: winner.name, league: winner.league, username: currentUsername });
 
-        // advance turn using transaction: read turnOrder length and update currentTurnIndex = (idx+1) % len
-        await db.ref(`rooms/${currentRoomId}/currentTurnIndex`).transaction(current => {
-          if (current === null || current === undefined) return 0;
-          return current + 1;
-        });
-        // normalize/wrap in a room-level transaction
+        // advance currentTurnIndex atomically with wrap using room transaction
         await db.ref(`rooms/${currentRoomId}`).transaction(room => {
-          if (!room) return;
+          if (!room) return room;
           const order = room.turnOrder || [];
           if (!Array.isArray(order) || order.length === 0) { room.currentTurnIndex = 0; return room; }
-          let idxNow = room.currentTurnIndex || 0;
-          if (idxNow >= order.length) idxNow = idxNow % order.length;
-          room.currentTurnIndex = idxNow;
+          room.currentTurnIndex = ((room.currentTurnIndex || 0) + 1) % order.length;
           return room;
         });
 
@@ -703,153 +568,91 @@
       resultLeague.textContent = r.league || '-';
       resultPlayer.textContent = `🎯 ${r.username} sorteou`;
       resultPanel.style.display = 'block';
-      spinIndicator.classList.add('hidden');
-      if (!isSpinning) spinBtn.disabled = false;
     }
 
-    // apply pending settings after spin finishes
-    function onSpinFinished() {
+    function onSpinFinished(){
       isSpinning = false;
+      // if pending settings, apply now
       if (window.__pendingSettings) {
         applySettings(window.__pendingSettings);
         window.__pendingSettings = null;
       }
     }
 
-    // LEAGUE SELECT: only host writes settingsRef; all listen (already set)
+    // league select: host writes settings
     leagueSelect.addEventListener('change', () => {
       const newLeague = leagueSelect.value;
       if (!currentRoomId) return;
       if (isHost && settingsRef) {
         settingsRef.update({ league: newLeague }).catch(err => console.warn(err));
       } else {
-        if (settingsRef) {
-          settingsRef.get().then(snap => {
-            const s = snap.val() || {};
-            leagueSelect.value = s.league || 'all';
-            updatePoolInfo();
-          }).catch(()=>{ leagueSelect.value = 'all'; updatePoolInfo(); });
-        } else {
-          leagueSelect.value = 'all';
-          updatePoolInfo();
-        }
+        if (settingsRef) { settingsRef.get().then(snap => { const s = snap.val() || {}; leagueSelect.value = s.league || 'all'; updatePoolInfo(); }).catch(()=>{ leagueSelect.value='all'; updatePoolInfo(); }); }
       }
       updatePoolInfo();
     });
-
-    // remove player and adjust turnOrder when leaving
-    async function removePlayerAndAdjust(playerId) {
-      try {
-        // remove player node
-        await db.ref(`rooms/${currentRoomId}/players/${playerId}`).remove();
-      } catch(e){}
-      try {
-        // remove from turnOrder
-        await db.ref(`rooms/${currentRoomId}/turnOrder`).transaction(current => {
-          if (!current || !Array.isArray(current)) return current;
-          return current.filter(id => id !== playerId);
-        });
-        // normalize currentTurnIndex
-        await db.ref(`rooms/${currentRoomId}`).transaction(room => {
-          if (!room) return room;
-          const order = room.turnOrder || [];
-          if (!Array.isArray(order) || order.length === 0) {
-            room.currentTurnIndex = 0;
-            return room;
-          }
-          if (!room.currentTurnIndex) room.currentTurnIndex = 0;
-          if (room.currentTurnIndex >= order.length) room.currentTurnIndex = room.currentTurnIndex % order.length;
-          return room;
-        });
-      } catch(e){ console.warn('removePlayerAndAdjust err', e); }
-    }
 
     // leave voluntarily
     async function leaveRoomCleanup(){
       if (!currentRoomId) return;
       try {
-        // remove player from players and turnOrder
-        await removePlayerAndAdjust(currentPlayerId);
-        // cancel presence onDisconnect
-        if (playerRef) { try { playerRef.onDisconnect().cancel().catch(()=>{}); } catch(e){} }
-        if (isHost && hostRef) {
-          // host leaving voluntarily -> remove whole room immediately
-          try { await db.ref(`rooms/${currentRoomId}`).remove(); } catch(e){}
-          try { hostRef.onDisconnect().cancel().catch(()=>{}); } catch(e){}
-        }
-        // cleanup listeners
-        if (settingsRef) try { settingsRef.off(); } catch(e){}
-        try { db.ref(`rooms/${currentRoomId}/players`).off(); } catch(e){}
-        try { db.ref(`rooms/${currentRoomId}/lastResult`).off(); } catch(e){}
-        try { db.ref(`rooms/${currentRoomId}/isSpinning`).off(); } catch(e){}
-        try { db.ref(`rooms/${currentRoomId}/spinData`).off(); } catch(e){}
-        try { db.ref(`rooms/${currentRoomId}/turnOrder`).off(); } catch(e){}
-        try { db.ref(`rooms/${currentRoomId}/currentTurnIndex`).off(); } catch(e){}
-      } catch(e){ console.warn('leave error', e); }
+        // remove from players node
+        await db.ref(`rooms/${currentRoomId}/players/${currentPlayerId}`).remove();
+      } catch(e){}
+      try {
+        // remove from turnOrder transactionally
+        await db.ref(`rooms/${currentRoomId}/turnOrder`).transaction(current => {
+          if (!current || !Array.isArray(current)) return current;
+          return current.filter(id => id !== currentPlayerId);
+        });
+      } catch(e){}
 
+      // If host leaving voluntarily, remove room
+      if (isHost && currentRoomId) {
+        try { await db.ref(`rooms/${currentRoomId}`).remove(); } catch(e){}
+      }
+
+      // cancel onDisconnect and listeners
+      try { if (playerRef) playerRef.onDisconnect().cancel().catch(()=>{}); } catch(e){}
+      try { if (hostRef) hostRef.onDisconnect().cancel().catch(()=>{}); } catch(e){}
+      try { if (settingsRef) settingsRef.off(); } catch(e){}
+      try { db.ref(`rooms/${currentRoomId}/players`).off(); db.ref(`rooms/${currentRoomId}/lastResult`).off(); db.ref(`rooms/${currentRoomId}/isSpinning`).off(); db.ref(`rooms/${currentRoomId}/spinData`).off(); db.ref(`rooms/${currentRoomId}/turnOrder`).off(); db.ref(`rooms/${currentRoomId}/currentTurnIndex`).off(); } catch(e){}
       localStorage.removeItem(KEY_ROOM);
       currentRoomId = '';
       document.getElementById('loginArea').style.display = 'flex';
       roomArea.classList.add('hidden');
     }
 
-    // beforeunload: nothing extra needed — onDisconnect on server will remove room if host disconnected
-    window.addEventListener('beforeunload', () => {
-      try { if (playerRef) playerRef.update({ online:false, lastSeen: firebase.database.ServerValue.TIMESTAMP }); } catch(e){}
-    });
-
-    // Bind UI events
-    confirmJoinBtn.addEventListener('click', async () => {
-      const code = (joinCodeInput.value || '').trim();
-      if (!/^\d{6}$/.test(code)) { joinError.textContent = 'Código inválido — use 6 dígitos'; joinError.classList.remove('hidden'); return; }
-      joinError.classList.add('hidden');
-      try {
-        const roomSnap = await db.ref(`rooms/${code}`).get();
-        if (!roomSnap.exists()) { joinError.textContent = 'Sala não encontrada.'; joinError.classList.remove('hidden'); return; }
-        const hostSnap = await db.ref(`rooms/${code}/host`).get();
-        const hostVal = hostSnap.val();
-        if (!hostVal || hostVal.online !== true) { joinError.textContent = 'Sala sem host disponível.'; joinError.classList.remove('hidden'); return; }
-        currentUsername = usernameInput.value.trim();
-        if (!currentUsername) { joinError.textContent = 'Digite seu nome.'; joinError.classList.remove('hidden'); return; }
-        localStorage.setItem(KEY_NAME, currentUsername);
-        localStorage.setItem(KEY_ROOM, code);
-        await enterRoom(code, false);
-      } catch(e) { console.error(e); joinError.textContent = 'Erro ao entrar.'; joinError.classList.remove('hidden'); }
-    });
-
-    document.getElementById('createBtn').addEventListener('click', () => {}); // already bound earlier
-
-    // wire spin button
+    // UI bindings
+    document.getElementById('confirmJoinBtn').addEventListener('click', () => {}); // bound above
     spinBtn.addEventListener('click', () => doSpin());
 
-    // league select change handled earlier
+    // visibility: set active flag (per-tab)
+    function setActiveFlag(active) {
+      if (!playerRef) return;
+      playerRef.update({ active: !!active }).catch(()=>{});
+    }
+    document.addEventListener('visibilitychange', () => {
+      setActiveFlag(document.visibilityState === 'visible');
+    });
 
-    // auto-fill stored username
+    // initial fill and auto-join preference
     const storedName = localStorage.getItem(KEY_NAME);
     if (storedName) usernameInput.value = storedName;
-
-    // show join if ?room param present
     const urlParams = new URLSearchParams(window.location.search);
     const roomParam = urlParams.get('room');
-    if (roomParam && /^\d{6}$/.test(roomParam)) {
-      joinBox.classList.remove('hidden');
-      joinCodeInput.value = roomParam;
-    }
+    if (roomParam && /^\d{6}$/.test(roomParam)) { joinBox.classList.remove('hidden'); joinCodeInput.value = roomParam; }
 
-    // auto-join stored room if host still exists and username stored (optional)
+    // auto-join stored if host exists
     (function tryAutoJoinStored(){
       const storedRoom = localStorage.getItem(KEY_ROOM);
       const storedUser = localStorage.getItem(KEY_NAME);
       if (storedRoom && storedUser) {
-        // check quickly if room exists & host online
         db.ref(`rooms/${storedRoom}/host`).get().then(snap => {
           const v = snap.val();
           if (v && v.online === true) {
             currentUsername = storedUser;
             usernameInput.value = storedUser;
             enterRoom(storedRoom, false).catch(()=>{});
-          } else {
-            // don't auto-join
           }
         }).catch(()=>{});
       }
