@@ -15,8 +15,8 @@
     :root{
       --overlay-strong: rgba(2,6,23,0.64);
       --overlay-soft: rgba(2,6,23,0.36);
-      --glass-bg: rgba(255,255,255,0.03);
-      --glass-border: rgba(255,255,255,0.06);
+      --bg-surface-1: #07121a; /* opaque dark surfaces */
+      --bg-surface-2: #06121a; /* slightly variant */
       --accent: #00f2fe;
       --accent-2: #00ff87;
       --text: #e6eef6;
@@ -70,16 +70,15 @@
     }
 
     /* ============================
-       Login glass styles
+       Login solid styles (non-transparent)
        ============================ */
     .login-glass, .login-container-glass {
-      background: linear-gradient(135deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
-      border: 1px solid var(--glass-border);
+      /* SOLID opaque background (no transparency) */
+      background: linear-gradient(180deg, var(--bg-surface-1), var(--bg-surface-2));
+      border: 1px solid rgba(255,255,255,0.03);
       border-radius: 16px;
       padding: 22px;
-      box-shadow: 0 12px 30px rgba(2,6,23,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
-      backdrop-filter: blur(8px) saturate(120%);
-      -webkit-backdrop-filter: blur(8px) saturate(120%);
+      box-shadow: 0 12px 30px rgba(0,0,0,0.65);
       max-width: 560px;
       margin: 18px auto;
     }
@@ -92,7 +91,7 @@
     .login-glass input[type="text"], .login-glass input[type="number"], .login-glass .input {
       width:100%;
       padding:12px 14px;
-      background: rgba(5,10,20,0.45);
+      background: #0b1720; /* solid input bg */
       border: 1px solid rgba(255,255,255,0.04);
       border-radius: 10px;
       color:var(--text);
@@ -103,8 +102,8 @@
     }
     .login-glass input::placeholder { color: #7f8a98; }
     .login-glass input:focus {
-      box-shadow: 0 8px 30px rgba(0,242,254,0.07);
-      border-color: rgba(0,242,254,0.5);
+      box-shadow: 0 8px 30px rgba(0,242,254,0.06);
+      border-color: rgba(0,242,254,0.45);
       transform: translateY(-1px);
     }
 
@@ -113,38 +112,43 @@
       transition: transform .12s ease, box-shadow .12s ease;
     }
     .login-glass .btn.create { background: linear-gradient(90deg,var(--accent),var(--accent-2)); color: #042024; box-shadow: 0 10px 30px rgba(0,242,254,0.06); }
-    .login-glass .btn.join { background: rgba(255,255,255,0.03); color: var(--text); border: 1px solid rgba(255,255,255,0.04); }
+    .login-glass .btn.join { background: #0e1a24; color: var(--text); border: 1px solid rgba(255,255,255,0.04); }
     .login-glass .btn:active { transform: translateY(1px) scale(.997); }
 
     .login-glass .btn-row { display:flex; gap:10px; margin-top:12px; }
-    .login-glass .status-badge { display:inline-block; padding:6px 12px; border-radius:999px; background:rgba(255,255,255,0.03); color:var(--muted); font-weight:700; font-size:0.85rem; }
+    .login-glass .status-badge { display:inline-block; padding:6px 12px; border-radius:999px; background:#0b1720; color:var(--muted); font-weight:700; font-size:0.85rem; }
 
     @media (max-width:900px) {
       .login-glass, .login-container-glass { margin: 12px; padding:16px; max-width: 420px; border-radius:12px; }
       .login-brand .logo { width:48px; height:48px; }
     }
 
-    /* Main app base layout */
+    /* Main app surfaces (opaque) */
     .app-wrapper { width:100%; max-width:1200px; margin: 18px auto; padding: 20px; box-sizing:border-box; }
-    .card { background: linear-gradient(180deg, rgba(3,7,14,0.18), rgba(3,7,14,0.45)); border-radius:12px; border:1px solid rgba(255,255,255,0.03); padding:20px; }
+    .card {
+      background: linear-gradient(180deg, #041017, #06121a); /* opaque */
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,0.03);
+      padding:20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    }
 
     /* Turn banner and visual improvements */
     .turn-banner { width:100%; border-radius:10px; padding:12px; text-align:center; margin-bottom:12px; font-weight:900; font-size:1.1rem; display:none; }
     .turn-banner.you { background: linear-gradient(90deg, rgba(16,185,129,0.12), rgba(16,185,129,0.06)); color: var(--success); border: 1px solid rgba(16,185,129,0.2); }
-    .turn-banner.wait { background: linear-gradient(90deg, rgba(148,163,184,0.04), rgba(148,163,184,0.02)); color: var(--muted); border: 1px solid rgba(52,65,85,0.12); }
-    .turn-banner.wait-red { background: linear-gradient(90deg, rgba(255,77,109,0.06), rgba(255,77,109,0.03)); color: var(--danger); border: 1px solid rgba(255,77,109,0.12); }
+    .turn-banner.wait { background: #081220; color: var(--muted); border: 1px solid rgba(52,65,85,0.12); }
+    .turn-banner.wait-red { background: #3a1114; color: var(--danger); border: 1px solid rgba(255,77,109,0.12); }
 
-    /* small elements kept from previous styling to maintain JS compatibility */
     .players { margin-top:12px; display:flex; flex-wrap:wrap; gap:8px; }
-    .player { background:#0f172a; padding:8px 12px; border-radius:8px; border:1px solid rgba(255,255,255,0.04); color:#cbd5e1; display:flex; gap:8px; align-items:center; }
+    .player { background:#07121a; padding:8px 12px; border-radius:8px; border:1px solid rgba(255,255,255,0.03); color:#cbd5e1; display:flex; gap:8px; align-items:center; }
     .player.host { background: linear-gradient(135deg,#fef3c7,#fde68a); color:#452a00; font-weight:800; }
 
-    .roulette-wrapper { position:relative; height:120px; border-radius:12px; background:#0b1220; overflow:hidden; border:2px solid rgba(255,255,255,0.03); margin-top:16px; }
+    .roulette-wrapper { position:relative; height:130px; border-radius:12px; background:#03121a; overflow:hidden; border:2px solid rgba(255,255,255,0.04); margin-top:16px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.02); }
+    .roulette-wrapper::before { content:''; position:absolute; left:50%; top:0; width:4px; height:100%; background:#ff0055; transform:translateX(-50%); z-index:10; }
 
-    /* Buttons */
     .copy-btn { background:#334155; color:var(--text); border:none; padding:8px; border-radius:8px; cursor:pointer; }
 
-    /* responsiveness */
+    /* small responsive tweaks */
     @media (max-width:900px) {
       .app-wrapper { padding:14px; }
       .roulette-wrapper { height:110px; }
@@ -153,7 +157,7 @@
 </head>
 <body class="site-wallpaper">
   <div class="app-wrapper">
-    <!-- Login area (glass) - keeps JS ids -->
+    <!-- Login area (solid) - keeps JS ids -->
     <div id="loginArea" class="login-glass" style="max-width:640px;">
       <div class="login-brand">
         <div class="logo">FC</div>
@@ -178,7 +182,7 @@
 
       <div class="btn-row" style="margin-top:12px;justify-content:flex-end">
         <button id="createBtn" class="btn create">Criar Sala</button>
-        <button id="showJoinBtn" class="btn join" style="background:transparent;border:1px solid rgba(255,255,255,0.04);margin-left:8px">Entrar</button>
+        <button id="showJoinBtn" class="btn join" style="background:#0e1a24;border:1px solid rgba(255,255,255,0.04);margin-left:8px">Entrar</button>
       </div>
 
       <div style="margin-top:10px">
@@ -243,13 +247,9 @@
 
   <script>
     /* ============================
-       Firebase + App logic (preserves all behavior)
-       - Turn order
-       - Host election / removal
-       - Presence + active flag (visibility)
-       - Host can remove players
-       - Requires >=2 players to spin
-       - Banner and spin button state updates
+       Firebase + App logic (sem mudanças funcionais)
+       - Mantive todo o comportamento anterior
+       - IDs intactos
        ============================ */
 
     const firebaseConfig = {
@@ -262,17 +262,12 @@
       appId: "1:394316068027:web:39151123593571769b659e"
     };
 
-    // STORAGE KEYS
     const KEY_PLAYER = 'roleta_player_id';
     const KEY_NAME = 'roleta_username';
     const KEY_ROOM = 'roleta_room_id';
 
-    // identity persisted
     let currentPlayerId = localStorage.getItem(KEY_PLAYER);
-    if (!currentPlayerId) {
-      currentPlayerId = Math.random().toString(36).substr(2,9);
-      localStorage.setItem(KEY_PLAYER, currentPlayerId);
-    }
+    if (!currentPlayerId) { currentPlayerId = Math.random().toString(36).substr(2,9); localStorage.setItem(KEY_PLAYER, currentPlayerId); }
 
     let db;
     let currentUsername = '';
@@ -281,7 +276,6 @@
     let isSpinning = false;
     const ITEM_WIDTH = 190;
 
-    // presence/host vars
     let playerRef = null;
     let connectedRef = null;
     let onDisconnectRegistered = false;
@@ -292,48 +286,39 @@
     let settingsRef = null;
     const GRACE_MS = 15000;
 
-    // turn order
     let latestTurnOrder = [];
 
-    // DOM refs
-    const usernameInput = document.getElementById('usernameInput');
-    const createBtn = document.getElementById('createBtn');
-    const showJoinBtn = document.getElementById('showJoinBtn');
-    const joinBox = document.getElementById('joinBox'); // not used visually here
-    const joinCodeInput = document.getElementById('joinCodeInput');
-    const confirmJoinBtn = document.getElementById('confirmJoinBtn');
+    const usernameInputEl = document.getElementById('usernameInput');
+    const createBtnEl = document.getElementById('createBtn');
+    const showJoinBtnEl = document.getElementById('showJoinBtn');
+    const joinCodeInputEl = document.getElementById('joinCodeInput');
+    const confirmJoinBtnEl = document.getElementById('confirmJoinBtn');
+    const roomCardEl = document.getElementById('roomCard');
+    const roomDisplayEl = document.getElementById('roomDisplay');
+    const playersListEl = document.getElementById('playersList');
+    const playersCountEl = document.getElementById('playersCount');
+    const shareControlsEl = document.getElementById('shareControls');
+    const shareBtnEl = document.getElementById('shareBtn');
+    const copyRoomBtnEl = document.getElementById('copyRoomBtn');
+    const leaveBtnEl = document.getElementById('leaveBtn');
+    const leagueSelectEl = document.getElementById('leagueSelect');
+    const poolInfoEl = document.getElementById('poolInfo');
+    const rouletteContainerEl = document.getElementById('rouletteContainer');
+    const spinBtnEl = document.getElementById('spinBtn');
+    const spinIndicatorEl = document.getElementById('spinIndicator');
+    const resultPanelEl = document.getElementById('resultPanel');
+    const resultTeamEl = document.getElementById('resultTeam');
+    const resultLeagueEl = document.getElementById('resultLeague');
+    const resultPlayerEl = document.getElementById('resultPlayer');
+    const noticeEl = document.getElementById('notice');
+    const turnInfoEl = document.getElementById('turnInfo');
+    const hostStatusEl = document.getElementById('hostStatus');
+    const turnBannerEl = document.getElementById('turnBanner');
+    const statusBadgeEl = document.getElementById('statusBadge');
 
-    const roomAreaCard = document.getElementById('roomCard');
-    const roomDisplay = document.getElementById('roomDisplay');
-    const playersList = document.getElementById('playersList');
-    const playersCount = document.getElementById('playersCount');
-    const shareControls = document.getElementById('shareControls');
-    const shareBtn = document.getElementById('shareBtn');
-    const copyRoomBtn = document.getElementById('copyRoomBtn');
-    const leaveBtn = document.getElementById('leaveBtn');
-
-    const leagueSelect = document.getElementById('leagueSelect');
-    const poolInfo = document.getElementById('poolInfo');
-    const rouletteContainer = document.getElementById('rouletteContainer');
-    const spinBtn = document.getElementById('spinBtn');
-    const spinIndicator = document.getElementById('spinIndicator');
-    const resultPanel = document.getElementById('resultPanel');
-    const resultTeam = document.getElementById('resultTeam');
-    const resultLeague = document.getElementById('resultLeague');
-    const resultPlayer = document.getElementById('resultPlayer');
-    const notice = document.getElementById('notice');
-    const turnInfo = document.getElementById('turnInfo');
-    const hostStatus = document.getElementById('hostStatus');
-    const turnBanner = document.getElementById('turnBanner');
-    const statusBadge = document.getElementById('statusBadge');
-
-    function initFirebase(){
-      const app = firebase.initializeApp(firebaseConfig);
-      db = firebase.database(app);
-    }
+    function initFirebase(){ const app = firebase.initializeApp(firebaseConfig); db = firebase.database(app); }
     initFirebase();
 
-    // teams DB (same as before)
     const teamsDB = {
       premier: { name: "Premier League", teams: ["Arsenal","Aston Villa","Bournemouth","Brentford","Brighton","Chelsea","Crystal Palace","Everton","Fulham","Ipswich Town","Leicester City","Liverpool","Manchester City","Manchester United","Newcastle United","Nottingham Forest","Southampton","Tottenham Hotspur","West Ham","Wolverhampton"] },
       bundesliga: { name: "Bundesliga", teams: ["Bayer Leverkusen","Bayern de Munique","Borussia Dortmund","Borussia Mönchengladbach","Eintracht Frankfurt","FC Augsburg","FC Heidenheim","FC St. Pauli","Holstein Kiel","Mainz 05","RB Leipzig","SC Freiburg","SV Werder Bremen","TSG Hoffenheim","Union Berlin","VfB Stuttgart","VfL Bochum","VfL Wolfsburg"] },
@@ -342,7 +327,6 @@
       laliga: { name: "La Liga Espanha", teams: ["Alavés","Athletic Bilbao","Atlético de Madrid","Barcelona","Celta de Vigo","Espanyol","Getafe","Girona","Las Palmas","Leganés","Mallorca","Osasuna","Rayo Vallecano","Real Betis","Real Madrid","Real Sociedad","Sevilla","Valencia","Valladolid","Villarreal"] }
     };
 
-    // helpers
     function shuffle(a){ return a.sort(()=>Math.random()-0.5); }
     function getActivePoolFromLeague(leagueValue){
       let pool=[];
@@ -353,9 +337,9 @@
       }
       return pool;
     }
-    function getActivePool(){ return getActivePoolFromLeague(leagueSelect.value); }
-    function updatePoolInfo(){ currentPool = getActivePool(); poolInfo.textContent = `${currentPool.length} times disponíveis`; setupStaticRoulette(); }
-    function setupStaticRoulette(){ const pool = getActivePool(); rouletteContainer.style.transition='none'; rouletteContainer.style.transform='translateX(0px)'; rouletteContainer.innerHTML=''; const display = pool.length>5 ? pool.slice(0,10) : [...pool,...pool,...pool]; display.forEach(it=>{ const d=document.createElement('div'); d.className='roulette-item'; d.innerHTML=`<div>${it.name}</div><div style="font-size:0.7rem;color:#94a3b8;margin-top:4px">${it.league}</div>`; rouletteContainer.appendChild(d); }); }
+    function getActivePool(){ return getActivePoolFromLeague(leagueSelectEl.value); }
+    function updatePoolInfo(){ currentPool = getActivePool(); poolInfoEl.textContent = `${currentPool.length} times disponíveis`; setupStaticRoulette(); }
+    function setupStaticRoulette(){ const pool = getActivePool(); rouletteContainerEl.style.transition='none'; rouletteContainerEl.style.transform='translateX(0px)'; rouletteContainerEl.innerHTML=''; const display = pool.length>5 ? pool.slice(0,10) : [...pool,...pool,...pool]; display.forEach(it=>{ const d=document.createElement('div'); d.className='roulette-item'; d.innerHTML=`<div>${it.name}</div><div style="font-size:0.7rem;color:#94a3b8;margin-top:4px">${it.league}</div>`; rouletteContainerEl.appendChild(d); }); }
 
     async function generateUniqueRoomCode(attempts = 8) {
       for (let i = 0; i < attempts; i++) {
@@ -366,14 +350,13 @@
       throw new Error('Não foi possível gerar código único. Tente novamente.');
     }
 
-    function showNotice(msg, ms = 2500) { notice.textContent = msg; notice.style.display = 'block'; setTimeout(()=> notice.style.display='none', ms); }
+    function showNotice(msg, ms = 2500) { noticeEl.textContent = msg; noticeEl.style.display = 'block'; setTimeout(()=> noticeEl.style.display='none', ms); }
 
-    function applySettings(settings){ if (!settings) return; if (typeof settings.league !== 'undefined') { leagueSelect.value = settings.league || 'all'; updatePoolInfo(); showNotice(`Host mudou a liga para: ${settings.league}`, 1400); } }
+    function applySettings(settings){ if (!settings) return; if (typeof settings.league !== 'undefined') { leagueSelectEl.value = settings.league || 'all'; updatePoolInfo(); showNotice(`Host mudou a liga para: ${settings.league}`, 1400); } }
 
     function setActiveFlag(active) { if (!playerRef) return; playerRef.update({ active: !!active }).catch(()=>{}); }
     document.addEventListener('visibilitychange', () => { setActiveFlag(document.visibilityState === 'visible'); updateSpinButtonState().catch(()=>{}); });
 
-    // remove player from turnOrder and normalize
     async function removeFromTurnOrderAndNormalize(playerId){
       if (!currentRoomId) return;
       await db.ref(`rooms/${currentRoomId}/turnOrder`).transaction(current => {
@@ -392,30 +375,30 @@
 
     async function updateSpinButtonState() {
       try {
-        if (!currentRoomId) { spinBtn.disabled = true; updateTurnBanner(false, ''); return; }
+        if (!currentRoomId) { spinBtnEl.disabled = true; updateTurnBanner(false, ''); return; }
         const spinSnap = await db.ref(`rooms/${currentRoomId}/isSpinning`).get();
-        if (spinSnap.exists() && spinSnap.val()) { spinBtn.disabled = true; updateTurnBanner(false, 'Giro em andamento'); return; }
+        if (spinSnap.exists() && spinSnap.val()) { spinBtnEl.disabled = true; updateTurnBanner(false, 'Giro em andamento'); return; }
         const hostSnap = await db.ref(`rooms/${currentRoomId}/host`).get();
-        if (!hostSnap.exists()) { spinBtn.disabled = true; updateTurnBanner(false, 'Sem host'); return; }
+        if (!hostSnap.exists()) { spinBtnEl.disabled = true; updateTurnBanner(false, 'Sem host'); return; }
         const hostVal = hostSnap.val();
-        if (!hostVal || hostVal.online !== true) { spinBtn.disabled = true; updateTurnBanner(false, 'Aguardando host'); return; }
+        if (!hostVal || hostVal.online !== true) { spinBtnEl.disabled = true; updateTurnBanner(false, 'Aguardando host'); return; }
         const playersSnap = await db.ref(`rooms/${currentRoomId}/players`).get();
         const players = playersSnap.val() || {};
         const entries = Object.entries(players);
-        if (entries.length < 2) { spinBtn.disabled = true; updateTurnBanner(false, 'Precisa de pelo menos 2 jogadores'); return; }
+        if (entries.length < 2) { spinBtnEl.disabled = true; updateTurnBanner(false, 'Precisa de pelo menos 2 jogadores'); return; }
         const allActive = entries.every(([id,p]) => p && p.online === true && p.active === true);
-        if (!allActive) { spinBtn.disabled = true; updateTurnBanner(false, 'Aguardando todos ativos'); return; }
+        if (!allActive) { spinBtnEl.disabled = true; updateTurnBanner(false, 'Aguardando todos ativos'); return; }
         const orderSnap = await db.ref(`rooms/${currentRoomId}/turnOrder`).get();
         const order = orderSnap.val() || [];
-        if (!Array.isArray(order) || order.length < 1) { spinBtn.disabled = true; updateTurnBanner(false, 'Ordem inválida'); return; }
+        if (!Array.isArray(order) || order.length < 1) { spinBtnEl.disabled = true; updateTurnBanner(false, 'Ordem inválida'); return; }
         const idxSnap = await db.ref(`rooms/${currentRoomId}/currentTurnIndex`).get();
         const idx = idxSnap.exists() ? idxSnap.val() : 0;
         const currentPid = order[idx % order.length];
         if (currentPid === currentPlayerId) {
-          spinBtn.disabled = false;
+          spinBtnEl.disabled = false;
           updateTurnBanner(true, 'É SUA VEZ — GIRAR AGORA');
         } else {
-          spinBtn.disabled = true;
+          spinBtnEl.disabled = true;
           const pSnap = await db.ref(`rooms/${currentRoomId}/players/${currentPid}`).get();
           const p = pSnap.val();
           const name = p && p.username ? p.username : 'Jogador';
@@ -423,25 +406,25 @@
         }
       } catch (e) {
         console.warn('updateSpinButtonState error', e);
-        spinBtn.disabled = true;
+        spinBtnEl.disabled = true;
         updateTurnBanner(false, '');
       }
     }
 
     function updateTurnBanner(isYourTurn, text, redFlag=false) {
       if (isYourTurn) {
-        turnBanner.className = 'turn-banner you';
-        turnBanner.textContent = text || 'É SUA VEZ — GIRAR AGORA';
-        turnBanner.style.display = 'block';
+        turnBannerEl.className = 'turn-banner you';
+        turnBannerEl.textContent = text || 'É SUA VEZ — GIRAR AGORA';
+        turnBannerEl.style.display = 'block';
       } else {
         if (redFlag) {
-          turnBanner.className = 'turn-banner wait-red';
-          turnBanner.textContent = text || '';
-          turnBanner.style.display = text ? 'block' : 'none';
+          turnBannerEl.className = 'turn-banner wait-red';
+          turnBannerEl.textContent = text || '';
+          turnBannerEl.style.display = text ? 'block' : 'none';
         } else {
-          turnBanner.className = 'turn-banner wait';
-          turnBanner.textContent = text || '';
-          turnBanner.style.display = text ? 'block' : 'none';
+          turnBannerEl.className = 'turn-banner wait';
+          turnBannerEl.textContent = text || '';
+          turnBannerEl.style.display = text ? 'block' : 'none';
         }
       }
     }
@@ -459,13 +442,12 @@
       else { const idxSnap = await idxRef.get(); const val = idxSnap.exists() ? idxSnap.val() : 0; await idxRef.set(val % order.length); }
     }
 
-    // CREATE ROOM
-    createBtn.addEventListener('click', async () => {
-      const name = usernameInput.value.trim();
+    createBtnEl.addEventListener('click', async () => {
+      const name = usernameInputEl.value.trim();
       if (!name){ alert('Digite seu nome antes de criar a sala.'); return; }
       currentUsername = name;
       localStorage.setItem(KEY_NAME, name);
-      createBtn.disabled = true;
+      createBtnEl.disabled = true;
       try {
         const code = await generateUniqueRoomCode();
         const hostNode = db.ref(`rooms/${code}/host`);
@@ -480,17 +462,14 @@
       } catch (err) {
         console.error(err);
         alert('Erro ao criar sala. Tente novamente.');
-        createBtn.disabled = false;
+        createBtnEl.disabled = false;
       }
     });
 
-    // JOIN flow
-    showJoinBtn.addEventListener('click', () => {
-      // reveal join input area (we used joinCodeInput visible by default in this layout)
-      joinCodeInput.focus();
-    });
-    confirmJoinBtn.addEventListener('click', async () => {
-      const code = (joinCodeInput.value || '').trim();
+    showJoinBtnEl.addEventListener('click', () => { joinCodeInputEl.focus(); });
+
+    confirmJoinBtnEl.addEventListener('click', async () => {
+      const code = (joinCodeInputEl.value || '').trim();
       if (!/^\d{6}$/.test(code)) { alert('Código inválido — use 6 dígitos.'); return; }
       try {
         const roomSnap = await db.ref(`rooms/${code}`).get();
@@ -498,7 +477,7 @@
         const hostSnap = await db.ref(`rooms/${code}/host`).get();
         const hostVal = hostSnap.val();
         if (!hostVal || hostVal.online !== true) { alert('Sala sem host disponível.'); return; }
-        currentUsername = usernameInput.value.trim();
+        currentUsername = usernameInputEl.value.trim();
         if (!currentUsername) { alert('Digite seu nome para entrar.'); return; }
         localStorage.setItem(KEY_NAME, currentUsername);
         localStorage.setItem(KEY_ROOM, code);
@@ -509,7 +488,6 @@
       }
     });
 
-    // listen for player removed events and react
     function listenForPlayerRemoved(roomId) {
       const playersRef = db.ref(`rooms/${roomId}/players`);
       playersRef.on('child_removed', async (snap) => {
@@ -528,14 +506,13 @@
       localStorage.removeItem(KEY_ROOM);
       currentRoomId = '';
       document.getElementById('loginArea').style.display = 'block';
-      roomAreaCard.style.display = 'none';
+      roomCardEl.style.display = 'none';
     }
 
-    // enter room common routine
     async function enterRoom(code, createdAsHost=false) {
       document.getElementById('loginArea').style.display = 'none';
-      roomAreaCard.style.display = 'block';
-      roomDisplay.textContent = code;
+      roomCardEl.style.display = 'block';
+      roomDisplayEl.textContent = code;
       currentRoomId = code;
 
       listenForPlayerRemoved(code);
@@ -561,8 +538,8 @@
         const v = snap.val();
         roomHostId = v ? v.playerId : null;
         isHost = roomHostId === currentPlayerId;
-        shareControls.style.display = isHost ? 'inline-flex' : 'none';
-        hostStatus.textContent = v ? `${v.username} (host) — ${v.online ? 'ativo' : 'ausente'}` : 'Sem host';
+        shareControlsEl.style.display = isHost ? 'inline-flex' : 'none';
+        hostStatusEl.textContent = v ? `${v.username} (host) — ${v.online ? 'ativo' : 'ausente'}` : 'Sem host';
         if (isHost) {
           try {
             hostRef.update({ online:true, username: currentUsername }).catch(()=>{});
@@ -600,8 +577,8 @@
 
       db.ref(`rooms/${code}/isSpinning`).on('value', snap => {
         const s = snap.val();
-        if (s && s.playerId !== currentPlayerId) { spinIndicator.style.display='block'; spinBtn.disabled = true; }
-        else { spinIndicator.style.display='none'; if (!isSpinning) spinBtn.disabled = false; }
+        if (s && s.playerId !== currentPlayerId) { spinIndicatorEl.style.display='block'; spinBtnEl.disabled = true; }
+        else { spinIndicatorEl.style.display='none'; if (!isSpinning) spinBtnEl.disabled = false; }
         updateSpinButtonState().catch(()=>{});
       });
 
@@ -609,13 +586,13 @@
       updatePoolInfo();
       updateSpinButtonState().catch(()=>{});
 
-      copyRoomBtn.onclick = () => { navigator.clipboard.writeText(code).then(()=>alert('Código copiado!')); };
-      shareBtn.onclick = () => {
+      copyRoomBtnEl.onclick = () => { navigator.clipboard.writeText(code).then(()=>alert('Código copiado!')); };
+      shareBtnEl.onclick = () => {
         const link = `${window.location.origin}${window.location.pathname}?room=${code}`;
         if (navigator.share) navigator.share({ title:'Roleta: entre na sala', url:link }).catch(()=>navigator.clipboard.writeText(link).then(()=>alert('Link copiado!')));
         else navigator.clipboard.writeText(link).then(()=>alert('Link copiado!'));
       };
-      leaveBtn.onclick = leaveRoomCleanup;
+      leaveBtnEl.onclick = leaveRoomCleanup;
 
       db.ref(`rooms/${code}/players/${currentPlayerId}`).on('value', snap => {
         if (!snap.exists() && currentRoomId === code) {
@@ -630,9 +607,9 @@
     }
 
     function renderPlayers(players) {
-      playersList.innerHTML = '';
+      playersListEl.innerHTML = '';
       const arr = Object.entries(players).map(([id,data]) => ({ id, ...data }));
-      playersCount.textContent = `${arr.length} jogadores`;
+      playersCountEl.textContent = `${arr.length} jogadores`;
       arr.forEach(p => {
         const el = document.createElement('div');
         el.className = 'player';
@@ -650,17 +627,23 @@
           const removeBtn = document.createElement('button');
           removeBtn.className = 'remove-btn';
           removeBtn.textContent = 'Remover';
+          removeBtn.style.background = '#7f1d1d';
+          removeBtn.style.color = '#fff';
+          removeBtn.style.borderRadius = '6px';
+          removeBtn.style.padding = '6px 8px';
+          removeBtn.style.border = 'none';
+          removeBtn.style.cursor = 'pointer';
           removeBtn.onclick = () => { if (confirm(`Remover ${p.username || 'Jogador'} da sala?`)) hostRemovePlayer(p.id); };
           controls.appendChild(removeBtn);
           el.appendChild(controls);
         }
-        playersList.appendChild(el);
+        playersListEl.appendChild(el);
       });
 
       db.ref(`rooms/${currentRoomId}/currentTurnIndex`).get().then(snap => {
         const idx = snap.val() || 0;
         const pid = latestTurnOrder.length ? latestTurnOrder[idx % latestTurnOrder.length] : null;
-        for (let child of playersList.children) {
+        for (let child of playersListEl.children) {
           child.classList.remove('turn');
           if (pid === currentPlayerId && child.textContent.includes('(Você)')) child.classList.add('turn');
         }
@@ -670,15 +653,15 @@
     function renderTurnUI(){
       db.ref(`rooms/${currentRoomId}/currentTurnIndex`).get().then(snap => {
         const idx = snap.val() || 0;
-        if (!Array.isArray(latestTurnOrder) || latestTurnOrder.length === 0) { turnInfo.textContent = ''; updateTurnBanner(false,''); return; }
+        if (!Array.isArray(latestTurnOrder) || latestTurnOrder.length === 0) { turnInfoEl.textContent = ''; updateTurnBanner(false,''); return; }
         const pid = latestTurnOrder[idx % latestTurnOrder.length];
         db.ref(`rooms/${currentRoomId}/players/${pid}`).get().then(psnap => {
           const p = psnap.val();
           const name = p && p.username ? p.username : pid;
-          if (pid === currentPlayerId) turnInfo.textContent = 'Sua vez de girar';
-          else turnInfo.textContent = `Vez de ${name}`;
-        }).catch(()=>{ turnInfo.textContent = ''; });
-      }).catch(()=>{ turnInfo.textContent = ''; });
+          if (pid === currentPlayerId) turnInfoEl.textContent = 'Sua vez de girar';
+          else turnInfoEl.textContent = `Vez de ${name}`;
+        }).catch(()=>{ turnInfoEl.textContent = ''; });
+      }).catch(()=>{ turnInfoEl.textContent = ''; });
     }
 
     async function doSpin(){
@@ -701,8 +684,8 @@
       const currentPid = order[idx % (order.length || 1)];
       if (currentPid !== currentPlayerId) { alert('Não é a sua vez de girar.'); return; }
       isSpinning = true;
-      spinBtn.disabled = true;
-      resultPanel.style.display = 'none';
+      spinBtnEl.disabled = true;
+      resultPanelEl.style.display = 'none';
       await db.ref(`rooms/${currentRoomId}/isSpinning`).set({ playerId: currentPlayerId, username: currentUsername, startTime: Date.now() });
       const pool = getActivePool();
       if (pool.length === 0) { alert('Nenhum time disponível'); return; }
@@ -724,28 +707,28 @@
         await advanceTurn();
         await updateSpinButtonState();
         isSpinning = false;
-        spinBtn.disabled = false;
+        spinBtnEl.disabled = false;
         onSpinFinished();
       }, spinData.duration);
     }
 
     function renderSpinItems(items){
-      rouletteContainer.style.transition='none';
-      rouletteContainer.style.transform='translateX(0px)';
-      rouletteContainer.innerHTML='';
+      rouletteContainerEl.style.transition='none';
+      rouletteContainerEl.style.transform='translateX(0px)';
+      rouletteContainerEl.innerHTML='';
       items.forEach(it => {
         const d=document.createElement('div'); d.className='roulette-item';
         d.innerHTML = `<div>${it.name}</div><div style="font-size:0.7rem;color:#94a3b8;margin-top:4px">${it.league}</div>`;
-        rouletteContainer.appendChild(d);
+        rouletteContainerEl.appendChild(d);
       });
-      void rouletteContainer.offsetHeight;
+      void rouletteContainerEl.offsetHeight;
     }
     function animateToIndex(index,duration){
       const wrapperWidth = document.querySelector('.roulette-wrapper').offsetWidth;
       const centerOffset = (wrapperWidth/2) - (ITEM_WIDTH/2) - 5;
       const targetX = -(index * ITEM_WIDTH) + centerOffset;
-      rouletteContainer.style.transition = `transform ${duration}ms cubic-bezier(0.15,0.85,0.35,1)`;
-      rouletteContainer.style.transform = `translateX(${targetX}px)`;
+      rouletteContainerEl.style.transition = `transform ${duration}ms cubic-bezier(0.15,0.85,0.35,1)`;
+      rouletteContainerEl.style.transform = `translateX(${targetX}px)`;
     }
 
     function setupSpinListener(){
@@ -762,29 +745,29 @@
           const wrapperWidth = document.querySelector('.roulette-wrapper').offsetWidth;
           const centerOffset = (wrapperWidth/2) - (ITEM_WIDTH/2) - 5;
           const targetX = -(d.targetIndex * ITEM_WIDTH) + centerOffset;
-          rouletteContainer.style.transition='none';
-          rouletteContainer.style.transform = `translateX(${targetX}px)`;
+          rouletteContainerEl.style.transition='none';
+          rouletteContainerEl.style.transform = `translateX(${targetX}px)`;
           onSpinFinished();
           return;
         }
         requestAnimationFrame(()=>requestAnimationFrame(()=> {
-          rouletteContainer.style.transition = `transform ${remaining}ms cubic-bezier(0.15,0.85,0.35,1)`;
+          rouletteContainerEl.style.transition = `transform ${remaining}ms cubic-bezier(0.15,0.85,0.35,1)`;
           const wrapperWidth = document.querySelector('.roulette-wrapper').offsetWidth;
           const centerOffset = (wrapperWidth/2) - (ITEM_WIDTH/2) - 5;
           const targetX = -(d.targetIndex * ITEM_WIDTH) + centerOffset;
-          rouletteContainer.style.transform = `translateX(${targetX}px)`;
+          rouletteContainerEl.style.transform = `translateX(${targetX}px)`;
         }));
-        spinIndicator.style.display='block';
-        spinBtn.disabled = true;
-        setTimeout(()=>{ spinIndicator.style.display='none'; if (!isSpinning) spinBtn.disabled=false; onSpinFinished(); }, remaining + 50);
+        spinIndicatorEl.style.display='block';
+        spinBtnEl.disabled = true;
+        setTimeout(()=>{ spinIndicatorEl.style.display='none'; if (!isSpinning) spinBtnEl.disabled=false; onSpinFinished(); }, remaining + 50);
       });
     }
 
     function showResult(r){
-      resultTeam.textContent = r.winner || '-';
-      resultLeague.textContent = r.league || '-';
-      resultPlayer.textContent = `🎯 ${r.username} sorteou`;
-      resultPanel.style.display = 'block';
+      resultTeamEl.textContent = r.winner || '-';
+      resultLeagueEl.textContent = r.league || '-';
+      resultPlayerEl.textContent = `🎯 ${r.username} sorteou`;
+      resultPanelEl.style.display = 'block';
     }
 
     function onSpinFinished(){
@@ -816,25 +799,18 @@
       localStorage.removeItem(KEY_ROOM);
       currentRoomId = '';
       document.getElementById('loginArea').style.display = 'block';
-      roomAreaCard.style.display = 'none';
+      roomCardEl.style.display = 'none';
     }
 
-    // UI bindings
-    spinBtn.addEventListener('click', () => doSpin());
-    copyRoomBtn.addEventListener('click', () => { if (!currentRoomId) return; navigator.clipboard.writeText(currentRoomId).then(()=> alert('Código copiado!')); });
+    spinBtnEl.addEventListener('click', () => doSpin());
+    copyRoomBtnEl.addEventListener('click', () => { if (!currentRoomId) return; navigator.clipboard.writeText(currentRoomId).then(()=> alert('Código copiado!')); });
 
-    // autoload stored username
     const storedName = localStorage.getItem(KEY_NAME);
-    if (storedName) usernameInput.value = storedName;
-
-    // auto-join via URL param
+    if (storedName) usernameInputEl.value = storedName;
     const urlParams = new URLSearchParams(window.location.search);
     const roomParam = urlParams.get('room');
-    if (roomParam && /^\d{6}$/.test(roomParam)) {
-      joinCodeInput.value = roomParam;
-    }
+    if (roomParam && /^\d{6}$/.test(roomParam)) { joinCodeInputEl.value = roomParam; }
 
-    // try auto-join stored room (optional)
     (function tryAutoJoinStored(){
       const storedRoom = localStorage.getItem(KEY_ROOM);
       const storedUser = localStorage.getItem(KEY_NAME);
@@ -843,7 +819,7 @@
           const v = snap.val();
           if (v && v.online === true) {
             currentUsername = storedUser;
-            usernameInput.value = storedUser;
+            usernameInputEl.value = storedUser;
             enterRoom(storedRoom, false).catch(()=>{});
           }
         }).catch(()=>{});
