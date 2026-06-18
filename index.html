@@ -7,6 +7,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-database-compat.js"></script>
   <style>
+    /* (estilos iguais ao anterior — mantidos para brevidade) */
     :root{--bg-color:#0b0f19;--card-bg:#1e293b;--accent-color:#00f2fe;--accent-gradient:linear-gradient(135deg,#00f2fe 0%,#4facfe 100%);--text-color:#f8fafc;--border-color:#334155}
     *{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif}
     body{background:var(--bg-color);color:var(--text-color);display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:20px}
@@ -80,6 +81,7 @@
         <div id="shareLinkContainer" style="display:none" class="share-container">
           <button class="share-btn" id="shareBtn">📤 Compartilhar Link</button>
           <button class="copy-btn" id="copyRoomBtn">📋 Copiar</button>
+          <button class="copy-btn" id="leaveBtn" title="Sair da sala">🚪 Sair</button>
         </div>
       </div>
     </div>
@@ -127,19 +129,21 @@
       appId: "1:394316068027:web:39151123593571769b659e"
     };
 
-    let db;
-    let currentUsername = '';
-    let currentRoomId = '';
+    // storage keys
     const STORED_PLAYER_KEY = 'roleta_player_id';
     const STORED_USERNAME_KEY = 'roleta_username';
+    const STORED_ROOM_KEY = 'roleta_room_id';
+
+    // persisted identity
     let currentPlayerId = localStorage.getItem(STORED_PLAYER_KEY);
     if (!currentPlayerId) {
       currentPlayerId = Math.random().toString(36).substr(2,9);
       localStorage.setItem(STORED_PLAYER_KEY, currentPlayerId);
     }
-    // if there is a stored username, prefill input later
-    const storedUsername = localStorage.getItem(STORED_USERNAME_KEY) || '';
 
+    let db;
+    let currentUsername = '';
+    let currentRoomId = localStorage.getItem(STORED_ROOM_KEY) || '';
     let currentPool = [];
     let isSpinning = false;
     const ITEM_WIDTH = 190;
@@ -153,13 +157,14 @@
     let hostRef = null;
     let hostOnDisconnectRegistered = false;
 
-    const GRACE_MS = 15000; // tempo de graça para reconexão do host (15s)
+    const GRACE_MS = 15000; // 15s
 
     function initFirebase(){
       const app = firebase.initializeApp(firebaseConfig);
       db = firebase.database(app);
     }
 
+    // teams DB (same as before)
     const database = {
       premier: { name: "Premier League", teams: ["Arsenal","Aston Villa","Bournemouth","Brentford","Brighton","Chelsea","Crystal Palace","Everton","Fulham","Ipswich Town","Leicester City","Liverpool","Manchester City","Manchester United","Newcastle United","Nottingham Forest","Southampton","Tottenham Hotspur","West Ham","Wolverhampton"] },
       bundesliga: { name: "Bundesliga", teams: ["Bayer Leverkusen","Bayern de Munique","Borussia Dortmund","Borussia Mönchengladbach","Eintracht Frankfurt","FC Augsburg","FC Heidenheim","FC St. Pauli","Holstein Kiel","Mainz 05","RB Leipzig","SC Freiburg","SV Werder Bremen","TSG Hoffenheim","Union Berlin","VfB Stuttgart","VfL Bochum","VfL Wolfsburg"] },
@@ -168,74 +173,71 @@
       laliga: { name: "La Liga Espanha", teams: ["Alavés","Athletic Bilbao","Atlético de Madrid","Barcelona","Celta de Vigo","Espanyol","Getafe","Girona","Las Palmas","Leganés","Mallorca","Osasuna","Rayo Vallecano","Real Betis","Real Madrid","Real Sociedad","Sevilla","Valencia","Valladolid","Villarreal"] }
     };
 
-    // UI elements
+    // UI refs
     const loginModal = document.getElementById('loginModal');
     const mainContainer = document.getElementById('mainContainer');
     const roomDisplay = document.getElementById('roomDisplay');
     const shareLinkContainer = document.getElementById('shareLinkContainer');
     const shareBtn = document.getElementById('shareBtn');
     const copyRoomBtn = document.getElementById('copyRoomBtn');
+    const leaveBtn = document.getElementById('leaveBtn');
 
-    // prefill username input if stored
-    if (storedUsername) {
-      document.getElementById('usernameInput').value = storedUsername;
-    }
+    // prefill username input if exists
+    const storedUsername = localStorage.getItem(STORED_USERNAME_KEY);
+    if (storedUsername) document.getElementById('usernameInput').value = storedUsername;
 
-    // create room: generate id and mark host (online:true)
+    // create room
     function createRoom(){
       const username = document.getElementById('usernameInput').value.trim();
       if (!username){ alert('Digite seu nome antes de criar a sala.'); return; }
       localStorage.setItem(STORED_USERNAME_KEY, username);
       const id = 'sala-' + Math.random().toString(36).substr(2,8);
       const hostNode = db.ref(`rooms/${id}/host`);
-      const hostObj = { playerId: currentPlayerId, username: username, online: true };
+      const hostObj = { playerId: currentPlayerId, username: username, online: true, createdAt: firebase.database.ServerValue.TIMESTAMP };
       hostNode.set(hostObj).then(() => {
-        try {
-          // onDisconnect marca host offline (em vez de remover)
-          hostNode.onDisconnect().update({ online: false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
-          hostOnDisconnectRegistered = true;
-        } catch(e) { console.warn('onDisconnect host failed', e); }
+        try { hostNode.onDisconnect().update({ online: false, lastSeen: firebase.database.ServerValue.TIMESTAMP }); hostOnDisconnectRegistered = true; } catch(e){ console.warn(e); }
+        // store chosen room for auto-join on reload
+        localStorage.setItem(STORED_ROOM_KEY, id);
         joinRoom(id, true);
-      }).catch(err => {
-        console.error('Erro ao criar sala', err);
-        alert('Erro ao criar sala. Veja o console.');
-      });
+      }).catch(err => { console.error(err); alert('Erro ao criar sala'); });
     }
 
-    // join room (called for create and normal join)
+    // join room
     async function joinRoom(roomId, asHost=false){
       const username = document.getElementById('usernameInput').value.trim();
       if (!username){ alert('Digite seu nome para entrar na sala.'); return; }
-      // store username persistently
       localStorage.setItem(STORED_USERNAME_KEY, username);
+      localStorage.setItem(STORED_ROOM_KEY, roomId);
       currentUsername = username;
       currentRoomId = roomId;
 
-      // set UI
+      // update UI
       loginModal.classList.add('hidden');
       mainContainer.style.display = 'block';
       roomDisplay.textContent = roomId;
       document.getElementById('statusBadge').textContent = 'Conectado ✅';
 
-      // player ref & presence (mark online true, onDisconnect set offline + lastSeen)
+      // prepare presence: do nothing until .info/connected shows true
       playerRef = db.ref(`rooms/${roomId}/players/${currentPlayerId}`);
       connectedRef = db.ref('.info/connected');
 
       connectedRef.on('value', snap => {
         if (snap && snap.val() === true){
-          if (!onDisconnectRegistered && playerRef){
-            try {
-              playerRef.onDisconnect().update({ online: false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
-            } catch(e) { console.warn('onDisconnect player failed', e); }
+          // register onDisconnect to mark offline + lastSeen
+          if (!onDisconnectRegistered && playerRef) {
+            try { playerRef.onDisconnect().update({ online: false, lastSeen: firebase.database.ServerValue.TIMESTAMP }); } catch(e){ console.warn(e); }
             onDisconnectRegistered = true;
           }
+          // set presence online
           if (playerRef) {
-            playerRef.set({ username: currentUsername, joinedAt: firebase.database.ServerValue.TIMESTAMP, online: true }).catch(() => {});
+            playerRef.set({ username: currentUsername, joinedAt: firebase.database.ServerValue.TIMESTAMP, online: true }).catch(()=>{});
           }
+        } else {
+          // disconnected — nothing to do; server will mark offline on onDisconnect
         }
       });
 
-      // hostRef listener: update local state and trigger election if needed
+      // host handling
       hostRef = db.ref(`rooms/${roomId}/host`);
       hostRef.on('value', snap => {
         const v = snap.val();
@@ -243,7 +245,7 @@
         isHost = roomHostId === currentPlayerId;
         shareLinkContainer.style.display = isHost ? 'flex' : 'none';
 
-        // if I am the host (reconnected with same id), ensure host is online:true and onDisconnect is active
+        // if I'm host, ensure host node is online:true and onDisconnect registered
         if (isHost) {
           try {
             hostRef.update({ online: true, username: currentUsername }).catch(()=>{});
@@ -251,35 +253,20 @@
               hostRef.onDisconnect().update({ online: false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
               hostOnDisconnectRegistered = true;
             }
-          } catch(e) { console.warn('host onDisconnect register failed', e); }
+          } catch(e){ console.warn(e); }
         }
 
-        // if no host present OR host offline beyond grace, attempt election (randomized small delay)
-        setTimeout(() => {
-          electHostIfNeeded();
-        }, Math.floor(Math.random() * 400));
+        // try election if needed (random small delay)
+        setTimeout(() => electHostIfNeeded(), Math.floor(Math.random()*400));
       });
 
       // listeners
-      db.ref(`rooms/${roomId}/players`).on('value', (snapshot) => {
-        const players = snapshot.val() || {};
-        updatePlayersList(players);
-      });
-
-      db.ref(`rooms/${roomId}/lastResult`).on('value', (snapshot) => {
-        const result = snapshot.val();
-        if (result) showResult({ winner: result.winner, league: result.league, username: result.username });
-      });
-
-      db.ref(`rooms/${roomId}/isSpinning`).on('value', (snapshot) => {
+      db.ref(`rooms/${roomId}/players`).on('value', snapshot => updatePlayersList(snapshot.val() || {}));
+      db.ref(`rooms/${roomId}/lastResult`).on('value', snapshot => { const r = snapshot.val(); if (r) showResult({ winner: r.winner, league: r.league, username: r.username }); });
+      db.ref(`rooms/${roomId}/isSpinning`).on('value', snapshot => {
         const spinning = snapshot.val();
-        if (spinning && spinning.playerId !== currentPlayerId) {
-          document.getElementById('spinIndicator').classList.remove('hidden');
-          document.getElementById('spinBtn').disabled = true;
-        } else {
-          document.getElementById('spinIndicator').classList.add('hidden');
-          if (!isSpinning) document.getElementById('spinBtn').disabled = false;
-        }
+        if (spinning && spinning.playerId !== currentPlayerId) { document.getElementById('spinIndicator').classList.remove('hidden'); document.getElementById('spinBtn').disabled = true; }
+        else { document.getElementById('spinIndicator').classList.add('hidden'); if (!isSpinning) document.getElementById('spinBtn').disabled = false; }
       });
 
       setupSpinListener();
@@ -287,7 +274,6 @@
       updatePoolInfo();
     }
 
-    // Try to elect host only if needed (host missing or offline beyond grace)
     async function electHostIfNeeded(){
       if (!currentRoomId) return;
       try {
@@ -295,239 +281,153 @@
         const hostVal = hostSnap.val();
         const now = Date.now();
 
-        // if host exists and online, nothing to do
         if (hostVal && hostVal.online === true) return;
+        if (hostVal && hostVal.online === false && hostVal.lastSeen && (now - hostVal.lastSeen) < GRACE_MS) return;
 
-        // if host exists but offline and lastSeen recent, wait
-        if (hostVal && hostVal.online === false && hostVal.lastSeen) {
-          const lastSeen = hostVal.lastSeen;
-          if ((now - lastSeen) < GRACE_MS) return;
-        }
-
-        // choose candidate among players (oldest joined)
         const playersSnap = await db.ref(`rooms/${currentRoomId}/players`).get();
         const players = playersSnap.val() || {};
         const entries = Object.entries(players);
         if (entries.length === 0) return;
 
-        let candidateId = null;
-        let candidateData = null;
-        let minJoined = Infinity;
+        let candidateId = null, candidateData = null, minJoined = Infinity;
         for (const [id, data] of entries) {
           const joined = data.joinedAt || 0;
-          if (joined && joined < minJoined) {
-            minJoined = joined;
-            candidateId = id;
-            candidateData = data;
-          }
+          if (joined && joined < minJoined) { minJoined = joined; candidateId = id; candidateData = data; }
         }
         if (!candidateId) { candidateId = entries[0][0]; candidateData = entries[0][1]; }
         const candidate = { playerId: candidateId, username: candidateData.username || 'Jogador', online: true };
 
         const hostRefLocal = db.ref(`rooms/${currentRoomId}/host`);
         await hostRefLocal.transaction(current => {
-          // install host only if no host OR host is offline and lastSeen older than GRACE_MS
           if (current === null) return candidate;
-          if (current && current.online === false && current.lastSeen && (Date.now() - current.lastSeen) >= GRACE_MS) {
-            return candidate;
-          }
-          return; // abort
+          if (current && current.online === false && current.lastSeen && (Date.now() - current.lastSeen) >= GRACE_MS) return candidate;
+          return;
         }, (error, committed, snapshot) => {
-          if (error) {
-            console.warn('Host transaction failed:', error);
-            return;
-          }
+          if (error) { console.warn('Host transaction failed:', error); return; }
           if (committed) {
-            // if I became host, register onDisconnect for host online:false
             const newHost = snapshot.val();
             if (newHost && newHost.playerId === currentPlayerId) {
               try {
                 hostRefLocal.update({ createdAt: firebase.database.ServerValue.TIMESTAMP }).catch(()=>{});
                 hostRefLocal.onDisconnect().update({ online: false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
                 hostOnDisconnectRegistered = true;
-              } catch(e) { console.warn('host onDisconnect register failed', e); }
+              } catch(e) { console.warn(e); }
             }
           }
         });
-      } catch (e) {
-        console.warn('Erro ao eleger host:', e);
-      }
+      } catch (e) { console.warn('electHostIfNeeded error', e); }
     }
 
-    // pool / UI
-    function getActivePool(){
-      const selected = document.getElementById('leagueSelect').value;
-      let pool = [];
-      if (selected === 'all') {
-        Object.keys(database).forEach(k => database[k].teams.forEach(t => pool.push({ name: t, league: database[k].name })));
-      } else {
-        database[selected].teams.forEach(t => pool.push({ name: t, league: database[selected].name }));
-      }
-      return pool;
-    }
+    // UI / roulette (same as before)
+    function getActivePool(){ const selected = document.getElementById('leagueSelect').value; let pool = []; if (selected === 'all') { Object.keys(database).forEach(k => database[k].teams.forEach(t => pool.push({ name: t, league: database[k].name }))); } else { database[selected].teams.forEach(t => pool.push({ name: t, league: database[selected].name })); } return pool; }
     function updatePoolInfo(){ currentPool = getActivePool(); document.getElementById('poolInfo').textContent = `${currentPool.length} times disponíveis`; setupStaticRoulette(); }
-    function setupStaticRoulette(){ const container = document.getElementById('rouletteContainer'); container.style.transition='none'; container.style.transform='translateX(0px)'; container.innerHTML=''; const pool=getActivePool(); const displayPool = pool.length>5?pool.slice(0,10):[...pool,...pool,...pool]; displayPool.forEach(item=>{ const d=document.createElement('div'); d.className='roulette-item'; d.innerHTML=`<div>${item.name}</div><div class="league-tag">${item.league}</div>`; container.appendChild(d); }); }
-    function shuffle(array){ return array.sort(()=>Math.random()-0.5); }
+    function setupStaticRoulette(){ const container=document.getElementById('rouletteContainer'); container.style.transition='none'; container.style.transform='translateX(0px)'; container.innerHTML=''; const pool=getActivePool(); const displayPool = pool.length>5?pool.slice(0,10):[...pool,...pool,...pool]; displayPool.forEach(item=>{ const d=document.createElement('div'); d.className='roulette-item'; d.innerHTML=`<div>${item.name}</div><div class="league-tag">${item.league}</div>`; container.appendChild(d); }); }
+    function shuffle(a){ return a.sort(()=>Math.random()-0.5); }
 
     function updatePlayersList(players){
-      const listContainer = document.getElementById('playersList');
-      listContainer.innerHTML = '';
-      const playerArray = Object.entries(players || {}).map(([id,data]) => ({ id, ...data }));
-      document.getElementById('playersCount').textContent = `${playerArray.length} Jogador${playerArray.length!==1 ? 'es' : ''}`;
+      const listContainer=document.getElementById('playersList'); listContainer.innerHTML='';
+      const playerArray = Object.entries(players||{}).map(([id,d])=>({id,...d}));
+      document.getElementById('playersCount').textContent = `${playerArray.length} Jogador${playerArray.length!==1?'es':''}`;
       playerArray.forEach(player => {
-        const badge = document.createElement('div');
-        badge.className = 'player-badge' + (player.id === currentPlayerId ? ' current' : '');
-        const nameSpan = document.createElement('span');
-        const onlineMark = player.online === false ? ' (offline)' : '';
-        nameSpan.textContent = player.username + (player.id === currentPlayerId ? ' (Você)' : '') + onlineMark;
+        const badge=document.createElement('div'); badge.className='player-badge'+(player.id===currentPlayerId?' current':'');
+        const nameSpan=document.createElement('span'); const onlineMark = player.online===false ? ' (offline)' : '';
+        nameSpan.textContent = player.username + (player.id===currentPlayerId? ' (Você)' : '') + onlineMark;
         badge.appendChild(nameSpan);
-        if (player.id === roomHostId){
-          const hb = document.createElement('span');
-          hb.className = 'host-badge';
-          hb.textContent = 'Host';
-          badge.appendChild(hb);
-        }
+        if (player.id === roomHostId){ const hb=document.createElement('span'); hb.className='host-badge'; hb.textContent='Host'; badge.appendChild(hb); }
         listContainer.appendChild(badge);
       });
     }
 
-    function showResult(result){
-      document.getElementById('spinIndicator').classList.add('hidden');
-      document.getElementById('resultTeam').textContent = result.winner || '-';
-      document.getElementById('resultLeague').textContent = result.league || '-';
-      document.getElementById('resultPlayer').textContent = `🎯 ${result.username} sorteou`;
-      document.getElementById('resultPanel').style.display = 'block';
-      if (!isSpinning) document.getElementById('spinBtn').disabled = false;
-    }
+    function showResult(r){ document.getElementById('spinIndicator').classList.add('hidden'); document.getElementById('resultTeam').textContent = r.winner || '-'; document.getElementById('resultLeague').textContent = r.league || '-'; document.getElementById('resultPlayer').textContent = `🎯 ${r.username} sorteou`; document.getElementById('resultPanel').style.display='block'; if (!isSpinning) document.getElementById('spinBtn').disabled=false; }
 
-    // spin implementation with spinData
-    function spin(){
-      if (isSpinning) return;
-      const spinBtn = document.getElementById('spinBtn');
-      const pool = getActivePool();
-      if (pool.length === 0){ alert('Nenhum time disponível!'); return; }
-      isSpinning = true; spinBtn.disabled = true; document.getElementById('resultPanel').style.display = 'none';
-      db.ref(`rooms/${currentRoomId}/isSpinning`).set({ playerId: currentPlayerId, username: currentUsername, startTime: Date.now() });
-      const winnerIndex = Math.floor(Math.random()*pool.length);
-      const winner = pool[winnerIndex];
-      let extendedItems = [];
-      for (let i=0;i<4;i++) extendedItems = extendedItems.concat(shuffle([...pool]));
-      const targetPositionIndex = Math.min(60, extendedItems.length - 10);
-      extendedItems[targetPositionIndex] = winner;
-      const spinData = { items: extendedItems.map(it=>({name:it.name, league:it.league})), targetIndex: targetPositionIndex, duration:5000, startTime:Date.now(), playerId:currentPlayerId, username:currentUsername };
-      db.ref(`rooms/${currentRoomId}/spinData`).set(spinData);
-      const container = document.getElementById('rouletteContainer'); container.style.transition='none'; container.style.transform='translateX(0px)'; container.innerHTML='';
-      spinData.items.forEach(item=>{ const d=document.createElement('div'); d.className='roulette-item'; d.innerHTML=`<div>${item.name}</div><div class="league-tag">${item.league}</div>`; container.appendChild(d); });
-      container.offsetHeight;
-      const wrapperWidth = document.querySelector('.roulette-wrapper').offsetWidth;
-      const centerOffset = (wrapperWidth/2) - (ITEM_WIDTH/2) - 5;
-      const targetX = -(spinData.targetIndex * ITEM_WIDTH) + centerOffset;
-      container.style.transition = `transform ${spinData.duration}ms cubic-bezier(0.15,0.85,0.35,1)`;
-      container.style.transform = `translateX(${targetX}px)`;
-      setTimeout(() => {
-        db.ref(`rooms/${currentRoomId}/lastResult`).set({ winner: winner.name, league: winner.league, username: currentUsername, playerId: currentPlayerId, timestamp: Date.now() });
-        db.ref(`rooms/${currentRoomId}/isSpinning`).remove();
-        db.ref(`rooms/${currentRoomId}/spinData`).remove();
-        showResult({ winner: winner.name, league: winner.league, username: currentUsername });
-        isSpinning = false; spinBtn.disabled = false;
-      }, spinData.duration);
-    }
+    // spin / spinData (same as before)
+    function spin(){ if (isSpinning) return; const spinBtn=document.getElementById('spinBtn'); const pool=getActivePool(); if (pool.length===0){ alert('Nenhum time disponível!'); return; } isSpinning=true; spinBtn.disabled=true; document.getElementById('resultPanel').style.display='none'; db.ref(`rooms/${currentRoomId}/isSpinning`).set({ playerId: currentPlayerId, username: currentUsername, startTime: Date.now() }); const winnerIndex=Math.floor(Math.random()*pool.length); const winner=pool[winnerIndex]; let extendedItems=[]; for (let i=0;i<4;i++) extendedItems=extendedItems.concat(shuffle([...pool])); const targetPositionIndex=Math.min(60, extendedItems.length-10); extendedItems[targetPositionIndex]=winner; const spinData={ items: extendedItems.map(it=>({name:it.name,league:it.league})), targetIndex:targetPositionIndex, duration:5000, startTime:Date.now(), playerId:currentPlayerId, username:currentUsername }; db.ref(`rooms/${currentRoomId}/spinData`).set(spinData); const container=document.getElementById('rouletteContainer'); container.style.transition='none'; container.style.transform='translateX(0px)'; container.innerHTML=''; spinData.items.forEach(item=>{ const d=document.createElement('div'); d.className='roulette-item'; d.innerHTML=`<div>${item.name}</div><div class="league-tag">${item.league}</div>`; container.appendChild(d); }); container.offsetHeight; const wrapperWidth=document.querySelector('.roulette-wrapper').offsetWidth; const centerOffset=(wrapperWidth/2)-(ITEM_WIDTH/2)-5; const targetX = -(spinData.targetIndex * ITEM_WIDTH) + centerOffset; container.style.transition = `transform ${spinData.duration}ms cubic-bezier(0.15,0.85,0.35,1)`; container.style.transform = `translateX(${targetX}px)`; setTimeout(()=>{ db.ref(`rooms/${currentRoomId}/lastResult`).set({ winner: winner.name, league: winner.league, username: currentUsername, playerId: currentPlayerId, timestamp: Date.now() }); db.ref(`rooms/${currentRoomId}/isSpinning`).remove(); db.ref(`rooms/${currentRoomId}/spinData`).remove(); showResult({ winner: winner.name, league: winner.league, username: currentUsername }); isSpinning=false; spinBtn.disabled=false; }, spinData.duration); }
 
-    function setupSpinListener(){
-      if (!currentRoomId) return;
-      db.ref(`rooms/${currentRoomId}/spinData`).on('value', snapshot => {
-        const data = snapshot.val();
-        if (!data) return;
-        if (data.playerId === currentPlayerId) return;
-        playSpinFromData(data);
-      });
-    }
+    function setupSpinListener(){ if (!currentRoomId) return; db.ref(`rooms/${currentRoomId}/spinData`).on('value', snap => { const d = snap.val(); if (!d) return; if (d.playerId === currentPlayerId) return; playSpinFromData(d); }); }
+    function playSpinFromData(d){ const container=document.getElementById('rouletteContainer'); container.style.transition='none'; container.style.transform='translateX(0px)'; container.innerHTML=''; d.items.forEach(item=>{ const el=document.createElement('div'); el.className='roulette-item'; el.innerHTML=`<div>${item.name}</div><div class="league-tag">${item.league}</div>`; container.appendChild(el); }); container.offsetHeight; const wrapperWidth=document.querySelector('.roulette-wrapper').offsetWidth; const centerOffset=(wrapperWidth/2)-(ITEM_WIDTH/2)-5; const targetX = -(d.targetIndex * ITEM_WIDTH) + centerOffset; const now=Date.now(); const elapsed=Math.max(0, now - d.startTime); const duration=d.duration || 5000; const remaining=Math.max(0, duration - elapsed); if (remaining<=0){ container.style.transition='none'; container.style.transform=`translateX(${targetX}px)`; return; } requestAnimationFrame(()=>{ requestAnimationFrame(()=>{ container.style.transition = `transform ${remaining}ms cubic-bezier(0.15,0.85,0.35,1)`; container.style.transform = `translateX(${targetX}px)`; }); }); document.getElementById('spinIndicator').classList.remove('hidden'); document.getElementById('spinBtn').disabled = true; setTimeout(()=>{ document.getElementById('spinIndicator').classList.add('hidden'); if (!isSpinning) document.getElementById('spinBtn').disabled=false; }, remaining+50); }
 
-    function playSpinFromData(data){
-      const container = document.getElementById('rouletteContainer');
-      container.style.transition='none'; container.style.transform='translateX(0px)'; container.innerHTML='';
-      data.items.forEach(item=>{ const d=document.createElement('div'); d.className='roulette-item'; d.innerHTML=`<div>${item.name}</div><div class="league-tag">${item.league}</div>`; container.appendChild(d); });
-      container.offsetHeight;
-      const wrapperWidth = document.querySelector('.roulette-wrapper').offsetWidth;
-      const centerOffset = (wrapperWidth/2) - (ITEM_WIDTH/2) - 5;
-      const targetX = -(data.targetIndex * ITEM_WIDTH) + centerOffset;
-      const now = Date.now();
-      const elapsed = Math.max(0, now - data.startTime);
-      const duration = data.duration || 5000;
-      const remaining = Math.max(0, duration - elapsed);
-      if (remaining <= 0){ container.style.transition='none'; container.style.transform=`translateX(${targetX}px)`; return; }
-      requestAnimationFrame(()=>{ requestAnimationFrame(()=>{ container.style.transition = `transform ${remaining}ms cubic-bezier(0.15,0.85,0.35,1)`; container.style.transform = `translateX(${targetX}px)`; }); });
-      document.getElementById('spinIndicator').classList.remove('hidden'); document.getElementById('spinBtn').disabled = true;
-      setTimeout(()=>{ document.getElementById('spinIndicator').classList.add('hidden'); if (!isSpinning) document.getElementById('spinBtn').disabled = false; }, remaining+50);
-    }
-
-    // cleanup when leaving voluntarily (logout/leave room)
+    // leave voluntarily
     function leaveRoomCleanup(){
       if (currentRoomId){
-        try{ db.ref(`rooms/${currentRoomId}/players`).off(); db.ref(`rooms/${currentRoomId}/lastResult`).off(); db.ref(`rooms/${currentRoomId}/isSpinning`).off(); db.ref(`rooms/${currentRoomId}/spinData`).off(); } catch(e){}
+        try { db.ref(`rooms/${currentRoomId}/players`).off(); db.ref(`rooms/${currentRoomId}/lastResult`).off(); db.ref(`rooms/${currentRoomId}/isSpinning`).off(); db.ref(`rooms/${currentRoomId}/spinData`).off(); } catch(e){}
       }
-      if (connectedRef){ try{ connectedRef.off(); } catch(e){} connectedRef = null; }
+      if (connectedRef){ try{ connectedRef.off(); } catch(e){} connectedRef=null; }
       if (playerRef){
-        try{ playerRef.onDisconnect().cancel().catch(()=>{}); playerRef.update({ online: false, lastSeen: firebase.database.ServerValue.TIMESTAMP }).catch(()=>{}); } catch(e){}
+        try { playerRef.onDisconnect().cancel().catch(()=>{}); playerRef.update({ online:false, lastSeen: firebase.database.ServerValue.TIMESTAMP }).catch(()=>{}); } catch(e){}
         playerRef = null;
       }
-      // if I'm host and leaving voluntarily, remove host node to trigger election immediately
       if (isHost && hostRef){
-        try{ hostRef.onDisconnect().cancel().catch(()=>{}); hostRef.remove().catch(()=>{}); } catch(e){}
+        try { hostRef.onDisconnect().cancel().catch(()=>{}); hostRef.remove().catch(()=>{}); } catch(e){}
         hostOnDisconnectRegistered = false;
       }
-      if (hostRef){
-        try{ hostRef.off(); hostRef = null; } catch(e){}
-      }
-      currentRoomId = ''; currentUsername = ''; isSpinning = false; roomHostId = null; isHost = false;
-      document.getElementById('mainContainer').style.display = 'none';
+      if (hostRef){ try{ hostRef.off(); hostRef=null; } catch(e){} }
+      // clear stored room to avoid auto-join after leaving voluntarily
+      localStorage.removeItem(STORED_ROOM_KEY);
+      currentRoomId=''; currentUsername=''; isSpinning=false; roomHostId=null; isHost=false;
+      document.getElementById('mainContainer').style.display='none';
       loginModal.classList.remove('hidden');
-      document.getElementById('statusBadge').textContent = 'Conectando...';
+      document.getElementById('statusBadge').textContent='Conectando...';
     }
 
-    // share handlers
-    function copyRoomLink(){
-      const link = `${window.location.origin}${window.location.pathname}?room=${currentRoomId}`;
-      navigator.clipboard.writeText(link).then(()=> alert('Link copiado! 📋'));
-    }
-    function shareLink(){
-      const link = `${window.location.origin}${window.location.pathname}?room=${currentRoomId}`;
-      if (navigator.share){
-        navigator.share({ title: 'Convite: Roleta EA FC 26', text: 'Venha jogar!', url: link }).catch(()=>{ copyRoomLink(); });
-      } else {
-        copyRoomLink();
-      }
-    }
+    // share / copy / bindings
+    function copyRoomLink(){ const link = `${window.location.origin}${window.location.pathname}?room=${currentRoomId}`; navigator.clipboard.writeText(link).then(()=> alert('Link copiado! 📋')); }
+    function shareLink(){ const link = `${window.location.origin}${window.location.pathname}?room=${currentRoomId}`; if (navigator.share){ navigator.share({ title:'Convite: Roleta EA FC 26', text:'Venha jogar!', url:link }).catch(()=>copyRoomLink()); } else copyRoomLink(); }
 
-    // bindings
     document.getElementById('createBtn').addEventListener('click', createRoom);
     document.getElementById('joinBtn').addEventListener('click', () => {
       const roomId = document.getElementById('roomInput').value.trim();
       if (!roomId){ alert('Preencha o ID da sala ou clique em Criar Sala.'); return; }
-      db.ref(`rooms/${roomId}`).get().then(snap => { joinRoom(roomId, false); }).catch(err => { console.error(err); alert('Erro ao entrar na sala'); });
+      // store intended room
+      localStorage.setItem(STORED_ROOM_KEY, roomId);
+      db.ref(`rooms/${roomId}`).get().then(()=> joinRoom(roomId, false)).catch(err=>{ console.error(err); alert('Erro ao entrar na sala'); });
     });
-
     document.getElementById('spinBtn').addEventListener('click', spin);
     document.getElementById('leagueSelect').addEventListener('change', updatePoolInfo);
-    document.getElementById('usernameInput').addEventListener('keypress', (e)=>{ if (e.key==='Enter'){ const rid = document.getElementById('roomInput').value.trim(); if (rid) joinRoom(rid,false); }});
-    document.getElementById('roomInput').addEventListener('keypress', (e)=>{ if (e.key==='Enter'){ const rid = document.getElementById('roomInput').value.trim(); if (rid) joinRoom(rid,false); }});
+    document.getElementById('usernameInput').addEventListener('keypress', e => { if (e.key==='Enter'){ const rid = document.getElementById('roomInput').value.trim(); if (rid) { localStorage.setItem(STORED_ROOM_KEY, rid); joinRoom(rid,false); } }});
+    document.getElementById('roomInput').addEventListener('keypress', e => { if (e.key==='Enter'){ const rid = document.getElementById('roomInput').value.trim(); if (rid) { localStorage.setItem(STORED_ROOM_KEY, rid); joinRoom(rid,false); } }});
     shareBtn.addEventListener('click', shareLink);
     copyRoomBtn.addEventListener('click', copyRoomLink);
+    leaveBtn.addEventListener('click', leaveRoomCleanup);
 
-    // auto-fill room from query and optionally auto-join if username stored
-    const urlParams = new URLSearchParams(window.location.search);
-    const roomFromURL = urlParams.get('room');
-    if (roomFromURL) document.getElementById('roomInput').value = roomFromURL;
+    // boot
     initFirebase();
 
-    // auto-join if username already stored and room param present
-    if (roomFromURL && localStorage.getItem(STORED_USERNAME_KEY)) {
-      // small delay to allow initFirebase/db readiness
-      setTimeout(() => {
-        document.getElementById('usernameInput').value = localStorage.getItem(STORED_USERNAME_KEY);
-        joinRoom(roomFromURL, false);
-      }, 500);
-    }
+    // auto-join logic on load: prefer stored room, else ?room param
+    (function autoJoinOnLoad(){
+      const urlParams = new URLSearchParams(window.location.search);
+      const roomParam = urlParams.get('room');
+      const storedRoom = localStorage.getItem(STORED_ROOM_KEY);
+      const roomToJoin = storedRoom || roomParam;
+      const storedUser = localStorage.getItem(STORED_USERNAME_KEY);
+
+      // if we have both a stored room and username, auto-join
+      if (roomToJoin && storedUser) {
+        // prefill username input and join
+        document.getElementById('usernameInput').value = storedUser;
+        // small timeout to allow firebase init to complete
+        setTimeout(() => {
+          // ensure db exists (defensive)
+          try {
+            joinRoom(roomToJoin, false);
+          } catch(e) {
+            console.warn('Auto join failed:', e);
+          }
+        }, 300);
+      } else if (roomParam) {
+        // prefill room input so user can click Entrar
+        document.getElementById('roomInput').value = roomParam;
+      }
+    })();
+
+    // try to keep presence during pagehide/unload (best effort)
+    window.addEventListener('beforeunload', () => {
+      // do not remove host/room on reload — we rely on onDisconnect marking offline
+      // attempt to write lastSeen quickly
+      try { if (playerRef) playerRef.update({ online:false, lastSeen: firebase.database.ServerValue.TIMESTAMP }); } catch(e){}
+    });
+    window.addEventListener('pagehide', () => {
+      try { if (playerRef) playerRef.update({ online:false, lastSeen: firebase.database.ServerValue.TIMESTAMP }); } catch(e){}
+    });
   </script>
 </body>
 </html>
