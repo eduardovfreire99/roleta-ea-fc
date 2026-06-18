@@ -462,6 +462,7 @@
         let currentPlayerId = Math.random().toString(36).substr(2, 9);
         let currentPool = [];
         let isSpinning = false;
+        const ITEM_WIDTH = 190;
 
         function initFirebase() {
             const app = firebase.initializeApp(firebaseConfig);
@@ -491,8 +492,6 @@
             }
         };
 
-        const ITEM_WIDTH = 190;
-
         function login() {
             const username = document.getElementById('usernameInput').value.trim();
             const roomId = document.getElementById('roomInput').value.trim();
@@ -505,23 +504,28 @@
             currentUsername = username;
             currentRoomId = roomId;
 
+            // registra jogador
             db.ref(`rooms/${roomId}/players/${currentPlayerId}`).set({
                 username: username,
                 joinedAt: new Date().getTime()
             });
 
+            // atualiza lista de jogadores em tempo real
             db.ref(`rooms/${roomId}/players`).on('value', (snapshot) => {
                 const players = snapshot.val() || {};
                 updatePlayersList(players);
             });
 
+            // ouve resultado final (lastResult) para mostrar painel
             db.ref(`rooms/${roomId}/lastResult`).on('value', (snapshot) => {
                 const result = snapshot.val();
-                if (result && result.playerId !== currentPlayerId) {
-                    showResult(result);
+                if (result) {
+                    // mostra mesmo que seja o próprio (para manter consistência)
+                    showResult({ winner: result.winner || result.winner, league: result.league, username: result.username });
                 }
             });
 
+            // ouve indicador simples de isSpinning para bloquear botão / mostrar indicador
             db.ref(`rooms/${roomId}/isSpinning`).on('value', (snapshot) => {
                 const spinning = snapshot.val();
                 if (spinning && spinning.playerId !== currentPlayerId) {
@@ -534,6 +538,9 @@
                     }
                 }
             });
+
+            // ouve spinData (dados da animação) e reproduz para observadores
+            setupSpinListener();
 
             document.getElementById('loginModal').classList.add('hidden');
             document.getElementById('mainContainer').style.display = 'block';
@@ -606,7 +613,7 @@
 
         function showResult(result) {
             document.getElementById('spinIndicator').classList.add('hidden');
-            document.getElementById('resultTeam').textContent = result.winner;
+            document.getElementById('resultTeam').textContent = result.winner || result.winner;
             document.getElementById('resultLeague').textContent = result.league;
             document.getElementById('resultPlayer').textContent = `🎯 ${result.username} sorteou`;
             document.getElementById('resultPanel').style.display = 'block';
@@ -616,6 +623,7 @@
             }
         }
 
+        // Função spin atualizada: grava spinData no DB para que outros clientes reproduzam
         function spin() {
             if (isSpinning) return;
 
@@ -631,59 +639,79 @@
             spinBtn.disabled = true;
             document.getElementById('resultPanel').style.display = 'none';
 
+            // marca que está girando (simples)
             db.ref(`rooms/${currentRoomId}/isSpinning`).set({
                 playerId: currentPlayerId,
                 username: currentUsername,
                 startTime: new Date().getTime()
             });
 
+            // escolhe vencedor
             const winnerIndex = Math.floor(Math.random() * pool.length);
             const winner = pool[winnerIndex];
 
+            // cria array estendido (ordem que vamos exibir)
             let extendedItems = [];
             for (let i = 0; i < 4; i++) {
                 extendedItems = extendedItems.concat(shuffle([...pool]));
             }
 
+            // força que um item específico seja o vencedor em certa posição
             const targetPositionIndex = Math.min(60, extendedItems.length - 10);
             extendedItems[targetPositionIndex] = winner;
 
+            // prepara spinData compacto (serializável)
+            const spinData = {
+                items: extendedItems.map(it => ({ name: it.name, league: it.league })),
+                targetIndex: targetPositionIndex,
+                duration: 5000,
+                startTime: Date.now(),
+                playerId: currentPlayerId,
+                username: currentUsername
+            };
+
+            // grava spinData para que todos reproduzam
+            db.ref(`rooms/${currentRoomId}/spinData`).set(spinData);
+
+            // monta e anima localmente (mesma lógica)
             const container = document.getElementById('rouletteContainer');
             container.style.transition = 'none';
             container.style.transform = 'translateX(0px)';
             container.innerHTML = '';
 
-            extendedItems.forEach(item => {
+            spinData.items.forEach(item => {
                 const div = document.createElement('div');
                 div.className = 'roulette-item';
                 div.innerHTML = `<div>${item.name}</div><div class="league-tag">${item.league}</div>`;
                 container.appendChild(div);
             });
 
-            container.offsetHeight;
+            container.offsetHeight; // forçar reflow
 
             const wrapperWidth = document.querySelector('.roulette-wrapper').offsetWidth;
             const centerOffset = (wrapperWidth / 2) - (ITEM_WIDTH / 2) - 5;
-            const targetX = -(targetPositionIndex * ITEM_WIDTH) + centerOffset;
+            const targetX = -(spinData.targetIndex * ITEM_WIDTH) + centerOffset;
 
-            container.style.transition = 'transform 5s cubic-bezier(0.15, 0.85, 0.35, 1)';
+            container.style.transition = `transform ${spinData.duration}ms cubic-bezier(0.15, 0.85, 0.35, 1)`;
             container.style.transform = `translateX(${targetX}px)`;
 
+            // ao fim, grava lastResult e limpa isSpinning e spinData
             setTimeout(() => {
                 db.ref(`rooms/${currentRoomId}/lastResult`).set({
                     winner: winner.name,
                     league: winner.league,
                     username: currentUsername,
                     playerId: currentPlayerId,
-                    timestamp: new Date().getTime()
+                    timestamp: Date.now()
                 });
 
                 db.ref(`rooms/${currentRoomId}/isSpinning`).remove();
+                db.ref(`rooms/${currentRoomId}/spinData`).remove();
 
                 showResult({ winner: winner.name, league: winner.league, username: currentUsername });
                 isSpinning = false;
                 spinBtn.disabled = false;
-            }, 5000);
+            }, spinData.duration);
         }
 
         function copyRoomLink() {
@@ -693,6 +721,74 @@
             });
         }
 
+        // Listener que reproduz animação quando spinData é criada por outro jogador
+        function setupSpinListener() {
+            db.ref(`rooms/${currentRoomId}/spinData`).on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (!data) return; // nada a reproduzir / já terminou
+
+                // se o próprio cliente foi quem iniciou, não precisa reproduzir (já está animando localmente)
+                if (data.playerId === currentPlayerId) return;
+
+                playSpinFromData(data);
+            });
+        }
+
+        function playSpinFromData(data) {
+            // monta os itens igual ao cliente que iniciou
+            const container = document.getElementById('rouletteContainer');
+            container.style.transition = 'none';
+            container.style.transform = 'translateX(0px)';
+            container.innerHTML = '';
+
+            data.items.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'roulette-item';
+                div.innerHTML = `<div>${item.name}</div><div class="league-tag">${item.league}</div>`;
+                container.appendChild(div);
+            });
+
+            container.offsetHeight; // forçar reflow
+
+            const wrapperWidth = document.querySelector('.roulette-wrapper').offsetWidth;
+            const centerOffset = (wrapperWidth / 2) - (ITEM_WIDTH / 2) - 5;
+            const targetX = -(data.targetIndex * ITEM_WIDTH) + centerOffset;
+
+            const now = Date.now();
+            const elapsed = Math.max(0, now - data.startTime);
+            const duration = data.duration || 5000;
+            const remaining = Math.max(0, duration - elapsed);
+
+            if (remaining <= 0) {
+                // já terminou no servidor; posiciona direto
+                container.style.transition = 'none';
+                container.style.transform = `translateX(${targetX}px)`;
+                return;
+            }
+
+            // inicia a animação com o tempo restante (fast-forward para clientes atrasados)
+            // duas requestAnimationFrame para garantir que a transição seja aplicada corretamente
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    container.style.transition = `transform ${remaining}ms cubic-bezier(0.15, 0.85, 0.35, 1)`;
+                    container.style.transform = `translateX(${targetX}px)`;
+                });
+            });
+
+            // Mostra indicador de spinning enquanto a animação acontece
+            document.getElementById('spinIndicator').classList.remove('hidden');
+            document.getElementById('spinBtn').disabled = true;
+
+            setTimeout(() => {
+                // quando acabar a animação, esperamos o lastResult chegar do servidor para mostrar resultado
+                document.getElementById('spinIndicator').classList.add('hidden');
+                if (!isSpinning) {
+                    document.getElementById('spinBtn').disabled = false;
+                }
+            }, remaining + 50);
+        }
+
+        // escuta eventos UI
         document.getElementById('spinBtn').addEventListener('click', spin);
         document.getElementById('leagueSelect').addEventListener('change', updatePoolInfo);
 
