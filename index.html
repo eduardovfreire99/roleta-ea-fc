@@ -45,7 +45,7 @@
     .login-brand{ display:flex; gap:12px; align-items:center; margin-bottom:12px }
     .login-brand .logo{ width:56px;height:56px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;font-weight:900;color:#031018 }
     .login-brand h2{ margin:0; font-size:1.05rem }
-    .login-row{ display:flex; gap:8px; align-items:center }
+    .login-brand .muted { margin:0; color:var(--muted); font-size:0.9rem }
 
     input.input{ width:100%; padding:12px 14px; border-radius:10px; border:1px solid rgba(255,255,255,0.04); background:#081520; color:var(--text); box-sizing:border-box }
     .btn{ padding:10px 14px; border-radius:10px; font-weight:800; cursor:pointer; border:none }
@@ -54,7 +54,7 @@
 
     /* join-code box hidden by default */
     .join-box{ display:none; margin-top:10px }
-    .muted{ color:var(--muted) }
+    .muted{color:var(--muted)}
 
     /* main card (opaque) */
     .card{ margin-top:18px; background: linear-gradient(180deg,#041017,#06121a); border-radius:12px; padding:18px; border:1px solid rgba(255,255,255,0.03); box-shadow:0 12px 30px rgba(0,0,0,0.6) }
@@ -78,10 +78,7 @@
 
     .result{ margin-top:12px; padding:12px; border-radius:8px; border:1px solid rgba(16,185,129,0.25); display:none }
 
-    @media (max-width:600px){
-      .roulette-item{ min-width:140px }
-      .login-brand .logo{ width:48px;height:48px }
-    }
+    @media (max-width:600px){ .roulette-item{ min-width:140px } .login-brand .logo{ width:48px;height:48px } }
   </style>
 </head>
 <body class="site-wallpaper">
@@ -166,7 +163,7 @@
 
       <button id="spinBtn" class="btn create" style="width:100%;margin-top:12px">Girar Roleta</button>
 
-      <div id="resultPanel" class="result">
+      <div id="resultPanel" class="result" style="display:none">
         <div style="color:var(--success);font-weight:800">Time Sorteado!</div>
         <div id="resultTeam" style="font-size:1.3rem;font-weight:900;margin-top:6px">-</div>
         <div id="resultLeague" class="muted" style="margin-top:6px">-</div>
@@ -176,10 +173,7 @@
   </div>
 
   <script>
-    // Mantive toda a lógica funcional tal como acordado.
-    // Apenas atualizei um comportamento UI: toggle do joinBox ao clicar em showJoinBtn.
-    // O restante do código (Firebase, turnos, remoção, presença, rotação) é o mesmo da versão anterior.
-
+    // Full JS implementation (Firebase + app logic)
     const firebaseConfig = {
       apiKey: "AIzaSyCjfxIJyKBsg9U_GJu4JP2Taq6fMXiGpMA",
       authDomain: "roleta-ea-fc-cc40c.firebaseapp.com",
@@ -190,13 +184,17 @@
       appId: "1:394316068027:web:39151123593571769b659e"
     };
 
-    // keys
+    // STORAGE KEYS
     const KEY_PLAYER = 'roleta_player_id';
     const KEY_NAME = 'roleta_username';
     const KEY_ROOM = 'roleta_room_id';
 
+    // persisted id
     let currentPlayerId = localStorage.getItem(KEY_PLAYER);
-    if (!currentPlayerId) { currentPlayerId = Math.random().toString(36).substr(2,9); localStorage.setItem(KEY_PLAYER, currentPlayerId); }
+    if (!currentPlayerId) {
+      currentPlayerId = Math.random().toString(36).substr(2,9);
+      localStorage.setItem(KEY_PLAYER, currentPlayerId);
+    }
 
     let db;
     let currentUsername = '';
@@ -205,7 +203,7 @@
     let isSpinning = false;
     const ITEM_WIDTH = 190;
 
-    // presence/host
+    // presence/host/settings
     let playerRef = null;
     let connectedRef = null;
     let onDisconnectRegistered = false;
@@ -214,43 +212,49 @@
     let isHost = false;
     let hostOnDisconnectRegistered = false;
     let settingsRef = null;
+    const GRACE_MS = 15000;
 
+    // turn order cache
     let latestTurnOrder = [];
 
-    // DOM
-    const usernameInput = document.getElementById('usernameInput');
-    const createBtn = document.getElementById('createBtn');
-    const showJoinBtn = document.getElementById('showJoinBtn');
-    const joinBox = document.getElementById('joinBox');
-    const joinCodeInput = document.getElementById('joinCodeInput');
-    const confirmJoinBtn = document.getElementById('confirmJoinBtn');
+    // DOM refs
+    const usernameInputEl = document.getElementById('usernameInput');
+    const createBtnEl = document.getElementById('createBtn');
+    const showJoinBtnEl = document.getElementById('showJoinBtn');
+    const joinBoxEl = document.getElementById('joinBox');
+    const joinCodeInputEl = document.getElementById('joinCodeInput');
+    const confirmJoinBtnEl = document.getElementById('confirmJoinBtn');
 
-    const roomCard = document.getElementById('roomCard');
-    const roomDisplay = document.getElementById('roomDisplay');
-    const playersList = document.getElementById('playersList');
-    const playersCount = document.getElementById('playersCount');
-    const shareControls = document.getElementById('shareControls');
-    const shareBtn = document.getElementById('shareBtn');
-    const copyRoomBtn = document.getElementById('copyRoomBtn');
-    const leaveBtn = document.getElementById('leaveBtn');
+    const roomCardEl = document.getElementById('roomCard');
+    const roomDisplayEl = document.getElementById('roomDisplay');
+    const playersListEl = document.getElementById('playersList');
+    const playersCountEl = document.getElementById('playersCount');
+    const shareControlsEl = document.getElementById('shareControls');
+    const shareBtnEl = document.getElementById('shareBtn');
+    const copyRoomBtnEl = document.getElementById('copyRoomBtn');
+    const leaveBtnEl = document.getElementById('leaveBtn');
 
-    const leagueSelect = document.getElementById('leagueSelect');
-    const poolInfo = document.getElementById('poolInfo');
-    const rouletteContainer = document.getElementById('rouletteContainer');
-    const spinBtn = document.getElementById('spinBtn');
-    const spinIndicator = document.getElementById('spinIndicator');
-    const resultPanel = document.getElementById('resultPanel');
-    const resultTeam = document.getElementById('resultTeam');
-    const resultLeague = document.getElementById('resultLeague');
-    const resultPlayer = document.getElementById('resultPlayer');
-    const turnBanner = document.getElementById('turnBanner');
-    const statusBadge = document.getElementById('statusBadge');
-    const hostStatus = document.getElementById('hostStatus');
-    const turnInfo = document.getElementById('turnInfo');
+    const leagueSelectEl = document.getElementById('leagueSelect');
+    const poolInfoEl = document.getElementById('poolInfo');
+    const rouletteContainerEl = document.getElementById('rouletteContainer');
+    const spinBtnEl = document.getElementById('spinBtn');
+    const spinIndicatorEl = document.getElementById('spinIndicator');
+    const resultPanelEl = document.getElementById('resultPanel');
+    const resultTeamEl = document.getElementById('resultTeam');
+    const resultLeagueEl = document.getElementById('resultLeague');
+    const resultPlayerEl = document.getElementById('resultPlayer');
+    const noticeEl = document.getElementById('statusBadge');
+    const turnInfoEl = document.getElementById('turnInfo');
+    const hostStatusEl = document.getElementById('hostStatus');
+    const turnBannerEl = document.getElementById('turnBanner');
 
-    function initFirebase(){ const app = firebase.initializeApp(firebaseConfig); db = firebase.database(app); }
+    function initFirebase(){
+      const app = firebase.initializeApp(firebaseConfig);
+      db = firebase.database(app);
+    }
     initFirebase();
 
+    // teams DB
     const teamsDB = {
       premier: { name: "Premier League", teams: ["Arsenal","Aston Villa","Bournemouth","Brentford","Brighton","Chelsea","Crystal Palace","Everton","Fulham","Ipswich Town","Leicester City","Liverpool","Manchester City","Manchester United","Newcastle United","Nottingham Forest","Southampton","Tottenham Hotspur","West Ham","Wolverhampton"] },
       bundesliga: { name: "Bundesliga", teams: ["Bayer Leverkusen","Bayern de Munique","Borussia Dortmund","Borussia Mönchengladbach","Eintracht Frankfurt","FC Augsburg","FC Heidenheim","FC St. Pauli","Holstein Kiel","Mainz 05","RB Leipzig","SC Freiburg","SV Werder Bremen","TSG Hoffenheim","Union Berlin","VfB Stuttgart","VfL Bochum","VfL Wolfsburg"] },
@@ -259,6 +263,7 @@
       laliga: { name: "La Liga Espanha", teams: ["Alavés","Athletic Bilbao","Atlético de Madrid","Barcelona","Celta de Vigo","Espanyol","Getafe","Girona","Las Palmas","Leganés","Mallorca","Osasuna","Rayo Vallecano","Real Betis","Real Madrid","Real Sociedad","Sevilla","Valencia","Valladolid","Villarreal"] }
     };
 
+    // helpers
     function shuffle(a){ return a.sort(()=>Math.random()-0.5); }
     function getActivePoolFromLeague(leagueValue){
       let pool=[];
@@ -269,9 +274,21 @@
       }
       return pool;
     }
-    function getActivePool(){ return getActivePoolFromLeague(leagueSelect.value); }
-    function updatePoolInfo(){ currentPool = getActivePool(); poolInfo.textContent = `${currentPool.length} times disponíveis`; setupStaticRoulette(); }
-    function setupStaticRoulette(){ const pool = getActivePool(); rouletteContainer.style.transition='none'; rouletteContainer.style.transform='translateX(0px)'; rouletteContainer.innerHTML=''; const display = pool.length>5 ? pool.slice(0,10) : [...pool,...pool,...pool]; display.forEach(it => { const d = document.createElement('div'); d.className = 'roulette-item'; d.innerHTML = `<div>${it.name}</div><div style="font-size:0.7rem;color:#94a3b8;margin-top:4px">${it.league}</div>`; rouletteContainer.appendChild(d); }); }
+    function getActivePool(){ return getActivePoolFromLeague(leagueSelectEl.value); }
+    function updatePoolInfo(){ currentPool = getActivePool(); poolInfoEl.textContent = `${currentPool.length} times disponíveis`; setupStaticRoulette(); }
+    function setupStaticRoulette(){
+      const pool = getActivePool();
+      rouletteContainerEl.style.transition='none';
+      rouletteContainerEl.style.transform='translateX(0px)';
+      rouletteContainerEl.innerHTML='';
+      const display = pool.length>5 ? pool.slice(0,10) : [...pool,...pool,...pool];
+      display.forEach(it => {
+        const d = document.createElement('div');
+        d.className = 'roulette-item';
+        d.innerHTML = `<div>${it.name}</div><div style="font-size:0.7rem;color:#94a3b8;margin-top:4px">${it.league}</div>`;
+        rouletteContainerEl.appendChild(d);
+      });
+    }
 
     async function generateUniqueRoomCode(attempts = 8) {
       for (let i = 0; i < attempts; i++) {
@@ -282,24 +299,30 @@
       throw new Error('Não foi possível gerar código único. Tente novamente.');
     }
 
-    function showNotice(msg, ms = 2500) { /* small visual */ statusBadge.textContent = msg; setTimeout(()=> { statusBadge.textContent = 'Conectando...'; }, ms); }
+    function showNotice(msg, ms = 2500) { noticeEl.textContent = msg; setTimeout(()=> noticeEl.textContent = 'Conectando...', ms); }
 
-    // apply settings (league)
+    // APPLY SETTINGS (league)
     function applySettings(settings) {
       if (!settings) return;
       if (typeof settings.league !== 'undefined') {
-        leagueSelect.value = settings.league || 'all';
+        leagueSelectEl.value = settings.league || 'all';
         updatePoolInfo();
         showNotice(`Host mudou a liga para: ${settings.league}`, 1400);
       }
     }
 
-    // visibility active flag
-    function setActiveFlag(active) { if (!playerRef) return; playerRef.update({ active: !!active }).catch(()=>{}); }
-    document.addEventListener('visibilitychange', () => { setActiveFlag(document.visibilityState === 'visible'); updateSpinButtonState().catch(()=>{}); });
+    // Active flag per tab
+    function setActiveFlag(active) {
+      if (!playerRef) return;
+      playerRef.update({ active: !!active }).catch(()=>{});
+    }
+    document.addEventListener('visibilitychange', () => {
+      setActiveFlag(document.visibilityState === 'visible');
+      updateSpinButtonState().catch(()=>{});
+    });
 
-    // remove from turnOrder + normalize
-    async function removeFromTurnOrderAndNormalize(playerId){
+    // remove player from turnOrder and normalize index
+    async function removeFromTurnOrderAndNormalize(playerId) {
       if (!currentRoomId) return;
       await db.ref(`rooms/${currentRoomId}/turnOrder`).transaction(current => {
         if (!current || !Array.isArray(current)) return current;
@@ -309,38 +332,46 @@
         if (!room) return room;
         const order = room.turnOrder || [];
         if (!Array.isArray(order) || order.length === 0) { room.currentTurnIndex = 0; return room; }
-        if (room.currentTurnIndex === undefined || room.currentTurnIndex === null) room.currentTurnIndex = 0;
+        if (!room.currentTurnIndex && room.currentTurnIndex !== 0) room.currentTurnIndex = 0;
         if (room.currentTurnIndex >= order.length) room.currentTurnIndex = room.currentTurnIndex % order.length;
         return room;
       });
     }
 
+    // Update spin button state (centralized)
     async function updateSpinButtonState() {
       try {
-        if (!currentRoomId) { spinBtn.disabled = true; updateTurnBanner(false,''); return; }
+        if (!currentRoomId) { spinBtnEl.disabled = true; updateTurnBanner(false, ''); return; }
+
         const spinSnap = await db.ref(`rooms/${currentRoomId}/isSpinning`).get();
-        if (spinSnap.exists() && spinSnap.val()) { spinBtn.disabled = true; updateTurnBanner(false,'Giro em andamento'); return; }
+        if (spinSnap.exists() && spinSnap.val()) { spinBtnEl.disabled = true; updateTurnBanner(false, 'Giro em andamento'); return; }
+
         const hostSnap = await db.ref(`rooms/${currentRoomId}/host`).get();
-        if (!hostSnap.exists()) { spinBtn.disabled = true; updateTurnBanner(false,'Sem host'); return; }
+        if (!hostSnap.exists()) { spinBtnEl.disabled = true; updateTurnBanner(false, 'Sem host'); return; }
         const hostVal = hostSnap.val();
-        if (!hostVal || hostVal.online !== true) { spinBtn.disabled = true; updateTurnBanner(false,'Aguardando host'); return; }
+        if (!hostVal || hostVal.online !== true) { spinBtnEl.disabled = true; updateTurnBanner(false, 'Aguardando host'); return; }
+
         const playersSnap = await db.ref(`rooms/${currentRoomId}/players`).get();
         const players = playersSnap.val() || {};
         const entries = Object.entries(players);
-        if (entries.length < 2) { spinBtn.disabled = true; updateTurnBanner(false,'Precisa de pelo menos 2 jogadores'); return; }
+        if (entries.length < 2) { spinBtnEl.disabled = true; updateTurnBanner(false, 'Precisa de pelo menos 2 jogadores'); return; }
+
         const allActive = entries.every(([id,p]) => p && p.online === true && p.active === true);
-        if (!allActive) { spinBtn.disabled = true; updateTurnBanner(false,'Aguardando todos ativos'); return; }
+        if (!allActive) { spinBtnEl.disabled = true; updateTurnBanner(false, 'Aguardando todos ativos'); return; }
+
         const orderSnap = await db.ref(`rooms/${currentRoomId}/turnOrder`).get();
         const order = orderSnap.val() || [];
-        if (!Array.isArray(order) || order.length < 1) { spinBtn.disabled = true; updateTurnBanner(false,'Ordem inválida'); return; }
+        if (!Array.isArray(order) || order.length < 1) { spinBtnEl.disabled = true; updateTurnBanner(false, 'Ordem inválida'); return; }
+
         const idxSnap = await db.ref(`rooms/${currentRoomId}/currentTurnIndex`).get();
         const idx = idxSnap.exists() ? idxSnap.val() : 0;
         const currentPid = order[idx % order.length];
+
         if (currentPid === currentPlayerId) {
-          spinBtn.disabled = false;
-          updateTurnBanner(true,'É SUA VEZ — GIRAR AGORA');
+          spinBtnEl.disabled = false;
+          updateTurnBanner(true, 'É SUA VEZ — GIRAR AGORA');
         } else {
-          spinBtn.disabled = true;
+          spinBtnEl.disabled = true;
           const pSnap = await db.ref(`rooms/${currentRoomId}/players/${currentPid}`).get();
           const p = pSnap.val();
           const name = p && p.username ? p.username : 'Jogador';
@@ -348,25 +379,25 @@
         }
       } catch (e) {
         console.warn('updateSpinButtonState error', e);
-        spinBtn.disabled = true;
-        updateTurnBanner(false,'');
+        spinBtnEl.disabled = true;
+        updateTurnBanner(false, '');
       }
     }
 
-    function updateTurnBanner(isYourTurn, text, red=false) {
+    function updateTurnBanner(isYourTurn, text, redFlag=false) {
       if (isYourTurn) {
-        turnBanner.className = 'turn-banner you';
-        turnBanner.textContent = text || 'É SUA VEZ — GIRAR AGORA';
-        turnBanner.style.display = 'block';
+        turnBannerEl.className = 'turn-banner you';
+        turnBannerEl.textContent = text || 'É SUA VEZ — GIRAR AGORA';
+        turnBannerEl.style.display = 'block';
       } else {
-        if (red) {
-          turnBanner.className = 'turn-banner wait-red';
-          turnBanner.textContent = text || '';
-          turnBanner.style.display = text ? 'block' : 'none';
+        if (redFlag) {
+          turnBannerEl.className = 'turn-banner wait-red';
+          turnBannerEl.textContent = text || '';
+          turnBannerEl.style.display = text ? 'block' : 'none';
         } else {
-          turnBanner.className = 'turn-banner wait';
-          turnBanner.textContent = text || '';
-          turnBanner.style.display = text ? 'block' : 'none';
+          turnBannerEl.className = 'turn-banner wait';
+          turnBannerEl.textContent = text || '';
+          turnBannerEl.style.display = text ? 'block' : 'none';
         }
       }
     }
@@ -384,13 +415,13 @@
       else { const idxSnap = await idxRef.get(); const val = idxSnap.exists() ? idxSnap.val() : 0; await idxRef.set(val % order.length); }
     }
 
-    // create
-    createBtn.addEventListener('click', async () => {
-      const name = usernameInput.value.trim();
+    // CREATE ROOM
+    createBtnEl.addEventListener('click', async () => {
+      const name = usernameInputEl.value.trim();
       if (!name) { alert('Digite seu nome antes de criar a sala.'); return; }
       currentUsername = name;
       localStorage.setItem(KEY_NAME, name);
-      createBtn.disabled = true;
+      createBtnEl.disabled = true;
       try {
         const code = await generateUniqueRoomCode();
         const hostNode = db.ref(`rooms/${code}/host`);
@@ -405,23 +436,45 @@
       } catch (err) {
         console.error(err);
         alert('Erro ao criar sala. Tente novamente.');
-        createBtn.disabled = false;
+        createBtnEl.disabled = false;
       }
     });
 
-    // show join box toggle (user requested: only show code field after clicking Entrar)
-    showJoinBtn.addEventListener('click', () => {
-      if (joinBox.style.display === 'none' || joinBox.style.display === '') {
-        joinBox.style.display = 'block';
-        joinCodeInput.focus();
+    // showJoinBtn: if code already present and valid -> join directly, else toggle join box
+    showJoinBtnEl.addEventListener('click', async () => {
+      const code = (joinCodeInputEl.value || '').trim();
+      if (/^\d{6}$/.test(code)) {
+        // attempt direct join
+        try {
+          const roomSnap = await db.ref(`rooms/${code}`).get();
+          if (!roomSnap.exists()) { alert('Sala não encontrada.'); return; }
+          const hostSnap = await db.ref(`rooms/${code}/host`).get();
+          const hostVal = hostSnap.val();
+          if (!hostVal || hostVal.online !== true) { alert('Sala sem host disponível.'); return; }
+          currentUsername = usernameInputEl.value.trim();
+          if (!currentUsername) { alert('Digite seu nome para entrar.'); return; }
+          localStorage.setItem(KEY_NAME, currentUsername);
+          localStorage.setItem(KEY_ROOM, code);
+          await enterRoom(code, false);
+        } catch (e) {
+          console.error(e);
+          alert('Erro ao entrar — verifique o código e tente novamente.');
+        }
+        return;
+      }
+
+      // toggle join box
+      if (joinBoxEl.style.display === 'none' || joinBoxEl.style.display === '') {
+        joinBoxEl.style.display = 'block';
+        joinCodeInputEl.focus();
       } else {
-        joinBox.style.display = 'none';
+        joinBoxEl.style.display = 'none';
       }
     });
 
-    // confirm join
-    confirmJoinBtn.addEventListener('click', async () => {
-      const code = (joinCodeInput.value || '').trim();
+    // confirm join button (same behavior as direct join)
+    confirmJoinBtnEl.addEventListener('click', async () => {
+      const code = (joinCodeInputEl.value || '').trim();
       if (!/^\d{6}$/.test(code)) { alert('Código inválido — use 6 dígitos.'); return; }
       try {
         const roomSnap = await db.ref(`rooms/${code}`).get();
@@ -429,7 +482,7 @@
         const hostSnap = await db.ref(`rooms/${code}/host`).get();
         const hostVal = hostSnap.val();
         if (!hostVal || hostVal.online !== true) { alert('Sala sem host disponível.'); return; }
-        currentUsername = usernameInput.value.trim();
+        currentUsername = usernameInputEl.value.trim();
         if (!currentUsername) { alert('Digite seu nome para entrar.'); return; }
         localStorage.setItem(KEY_NAME, currentUsername);
         localStorage.setItem(KEY_ROOM, code);
@@ -440,28 +493,371 @@
       }
     });
 
-    // rest of the logic: enterRoom, listeners, spin, etc. (kept same as previous full version)
-    // For brevity I re-use the same functions as before (enterRoom, renderPlayers, doSpin, etc.)
-    // Insert the same implementations as in the prior full HTML (omitted here only for brevity in the message),
-    // but in your file they remain intact — in this response the full logic is kept exactly as before.
+    // allow Enter key on the joinCodeInput to trigger join
+    joinCodeInputEl.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        confirmJoinBtnEl.click();
+      }
+    });
 
-    // --- The rest of the full implementation is identical to the previous working version we used.
-    // If you want I can resend the full file with the unchanged large JS body in place (it is the same logic).
-    // For clarity and safety I will now include the full JS (unchanged) to ensure completeness.
+    // listener for player removed
+    function listenForPlayerRemoved(roomId) {
+      const playersRef = db.ref(`rooms/${roomId}/players`);
+      playersRef.on('child_removed', async (snap) => {
+        const removedId = snap.key;
+        await removeFromTurnOrderAndNormalize(removedId);
+        await updateSpinButtonState();
+        if (removedId === currentPlayerId && currentRoomId === roomId) {
+          alert('Você foi removido da sala pelo host ou desconectado. Voltando à tela inicial.');
+          cleanupLocalAfterRemoval();
+        }
+      });
+    }
 
-    // FULL JS (copied from previous working version) ------------------------------
-    (function fullJs() {
-      // To keep this response compact we re-inserted the same full JS body from the previous working file.
-      // Below is the full logic (Firebase listeners, spin handling, turn management, host removal, presence).
-      // Paste the same big JS functions (enterRoom, renderPlayers, doSpin, setupSpinListener, updateSpinButtonState, etc.)
-      // from the previous full HTML you already had — they are unchanged.
-      //
-      // NOTE: In this delivered file the full JS is present exactly as in the previous final version you accepted,
-      // with the single UI change above (joinBox toggle). That preserves all features.
+    function cleanupLocalAfterRemoval(){
+      try { db.ref(`rooms/${currentRoomId}/players/${currentPlayerId}`).off(); } catch(e){}
+      localStorage.removeItem(KEY_ROOM);
+      currentRoomId = '';
+      document.getElementById('loginArea').style.display = 'block';
+      roomCardEl.style.display = 'none';
+    }
+
+    // enterRoom implementation
+    async function enterRoom(code, createdAsHost=false) {
+      document.getElementById('loginArea').style.display = 'none';
+      roomCardEl.style.display = 'block';
+      roomDisplayEl.textContent = code;
+      currentRoomId = code;
+
+      listenForPlayerRemoved(code);
+
+      playerRef = db.ref(`rooms/${code}/players/${currentPlayerId}`);
+      connectedRef = db.ref('.info/connected');
+
+      connectedRef.on('value', snap => {
+        if (snap && snap.val() === true) {
+          if (!onDisconnectRegistered && playerRef) {
+            try { playerRef.onDisconnect().remove(); } catch(e){ console.warn(e); }
+            onDisconnectRegistered = true;
+          }
+          if (playerRef) {
+            const activeNow = document.visibilityState === 'visible';
+            playerRef.set({ username: currentUsername, joinedAt: firebase.database.ServerValue.TIMESTAMP, online:true, active:activeNow }).catch(()=>{});
+          }
+        }
+      });
+
+      hostRef = db.ref(`rooms/${code}/host`);
+      hostRef.on('value', snap => {
+        const v = snap.val();
+        roomHostId = v ? v.playerId : null;
+        isHost = roomHostId === currentPlayerId;
+        shareControlsEl.style.display = isHost ? 'inline-flex' : 'none';
+        hostStatusEl.textContent = v ? `${v.username} (host) — ${v.online ? 'ativo' : 'ausente'}` : 'Sem host';
+        if (isHost) {
+          try {
+            hostRef.update({ online:true, username: currentUsername }).catch(()=>{});
+            if (!hostOnDisconnectRegistered) {
+              hostRef.onDisconnect().update({ online:false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
+              hostOnDisconnectRegistered = true;
+            }
+            try { db.ref(`rooms/${code}`).onDisconnect().remove(); } catch(e){}
+          } catch(e){}
+        }
+        updateSpinButtonState().catch(()=>{});
+      });
+
+      settingsRef = db.ref(`rooms/${code}/settings`);
+      settingsRef.on('value', snap => {
+        const settings = snap.val() || { league:'all' };
+        if (isSpinning) { window.__pendingSettings = settings; showNotice('Host mudou configurações — serão aplicadas após o giro'); }
+        else applySettings(settings);
+        updateSpinButtonState().catch(()=>{});
+      });
+
+      db.ref(`rooms/${code}/turnOrder`).transaction(current => {
+        if (!current) return [currentPlayerId];
+        if (!Array.isArray(current)) return [currentPlayerId];
+        if (current.indexOf(currentPlayerId) === -1) current.push(currentPlayerId);
+        return current;
+      });
+
+      db.ref(`rooms/${code}/turnOrder`).on('value', snap => { latestTurnOrder = snap.val() || []; renderTurnUI(); updateSpinButtonState().catch(()=>{}); });
+      db.ref(`rooms/${code}/currentTurnIndex`).on('value', snap => { renderTurnUI(); updateSpinButtonState().catch(()=>{}); });
+
+      db.ref(`rooms/${code}/players`).on('value', snap => { const players = snap.val() || {}; renderPlayers(players); updateSpinButtonState().catch(()=>{}); });
+
+      db.ref(`rooms/${code}/lastResult`).on('value', snap => { const r = snap.val(); if (r) showResult(r); });
+
+      db.ref(`rooms/${code}/isSpinning`).on('value', snap => {
+        const s = snap.val();
+        if (s && s.playerId !== currentPlayerId) { spinIndicatorEl.style.display='block'; spinBtnEl.disabled = true; }
+        else { spinIndicatorEl.style.display='none'; if (!isSpinning) spinBtnEl.disabled = false; }
+        updateSpinButtonState().catch(()=>{});
+      });
+
+      setupSpinListener();
+      updatePoolInfo();
+      updateSpinButtonState().catch(()=>{});
+
+      copyRoomBtnEl.onclick = () => { navigator.clipboard.writeText(code).then(()=>alert('Código copiado!')); };
+      shareBtnEl.onclick = () => {
+        const link = `${window.location.origin}${window.location.pathname}?room=${code}`;
+        if (navigator.share) navigator.share({ title:'Roleta: entre na sala', url:link }).catch(()=>navigator.clipboard.writeText(link).then(()=>alert('Link copiado!')));
+        else navigator.clipboard.writeText(link).then(()=>alert('Link copiado!'));
+      };
+      leaveBtnEl.onclick = leaveRoomCleanup;
+
+      db.ref(`rooms/${code}/players/${currentPlayerId}`).on('value', snap => {
+        if (!snap.exists() && currentRoomId === code) {
+          setTimeout(() => {
+            if (currentRoomId === code) {
+              alert('Você foi removido/desconectado. Voltando à tela inicial.');
+              cleanupLocalAfterRemoval();
+            }
+          }, 100);
+        }
+      });
+    }
+
+    function renderPlayers(players) {
+      playersListEl.innerHTML = '';
+      const arr = Object.entries(players).map(([id,data]) => ({ id, ...data }));
+      playersCountEl.textContent = `${arr.length} jogadores`;
+      arr.forEach(p => {
+        const el = document.createElement('div');
+        el.className = 'player';
+        if (p.id === roomHostId) el.classList.add('host');
+        if (p.active === false) el.classList.add('inactive');
+        const name = p.username || 'Jogador';
+        const you = p.id === currentPlayerId ? ' (Você)' : '';
+        const offline = p.online === false ? ' (offline)' : '';
+        const inactive = p.active === false ? ' (inativo)' : '';
+        el.textContent = name + you + offline + inactive;
+
+        if (isHost && p.id !== currentPlayerId) {
+          const controls = document.createElement('div');
+          controls.style.marginLeft = '8px';
+          const removeBtn = document.createElement('button');
+          removeBtn.className = 'remove-btn';
+          removeBtn.textContent = 'Remover';
+          removeBtn.style.background = '#7f1d1d';
+          removeBtn.style.color = '#fff';
+          removeBtn.style.borderRadius = '6px';
+          removeBtn.style.padding = '6px 8px';
+          removeBtn.style.border = 'none';
+          removeBtn.style.cursor = 'pointer';
+          removeBtn.onclick = () => { if (confirm(`Remover ${p.username || 'Jogador'} da sala?`)) hostRemovePlayer(p.id); };
+          controls.appendChild(removeBtn);
+          el.appendChild(controls);
+        }
+        playersListEl.appendChild(el);
+      });
+
+      db.ref(`rooms/${currentRoomId}/currentTurnIndex`).get().then(snap => {
+        const idx = snap.val() || 0;
+        const pid = latestTurnOrder.length ? latestTurnOrder[idx % latestTurnOrder.length] : null;
+        for (let child of playersListEl.children) {
+          child.classList.remove('turn');
+          if (pid === currentPlayerId && child.textContent.includes('(Você)')) child.classList.add('turn');
+        }
+      }).catch(()=>{});
+    }
+
+    function renderTurnUI(){
+      db.ref(`rooms/${currentRoomId}/currentTurnIndex`).get().then(snap => {
+        const idx = snap.val() || 0;
+        if (!Array.isArray(latestTurnOrder) || latestTurnOrder.length === 0) { turnInfoEl.textContent = ''; updateTurnBanner(false,''); return; }
+        const pid = latestTurnOrder[idx % latestTurnOrder.length];
+        db.ref(`rooms/${currentRoomId}/players/${pid}`).get().then(psnap => {
+          const p = psnap.val();
+          const name = p && p.username ? p.username : pid;
+          if (pid === currentPlayerId) turnInfoEl.textContent = 'Sua vez de girar';
+          else turnInfoEl.textContent = `Vez de ${name}`;
+        }).catch(()=>{ turnInfoEl.textContent = ''; });
+      }).catch(()=>{ turnInfoEl.textContent = ''; });
+    }
+
+    async function doSpin(){
+      if (!currentRoomId) return;
+      if (isSpinning) return;
+      const hostSnap = await db.ref(`rooms/${currentRoomId}/host`).get();
+      const hostVal = hostSnap.val();
+      if (!hostVal || hostVal.online !== true) { alert('Aguardando host para girar a roleta'); return; }
+      const playersSnap = await db.ref(`rooms/${currentRoomId}/players`).get();
+      const players = playersSnap.val() || {};
+      const entries = Object.entries(players);
+      if (entries.length < 2) { alert('São necessários pelo menos 2 jogadores para girar.'); return; }
+      const allActive = entries.every(([id,p]) => p && p.online === true && p.active === true);
+      if (!allActive) { alert('Aguardando todos os jogadores ativos na aba para girar a roleta'); return; }
+      const orderSnap = await db.ref(`rooms/${currentRoomId}/turnOrder`).get();
+      const order = orderSnap.val() || [];
+      if (!Array.isArray(order) || order.length === 0) { alert('Ordem inválida'); return; }
+      const idxSnap = await db.ref(`rooms/${currentRoomId}/currentTurnIndex`).get();
+      const idx = idxSnap.exists() ? idxSnap.val() : 0;
+      const currentPid = order[idx % (order.length || 1)];
+      if (currentPid !== currentPlayerId) { alert('Não é a sua vez de girar.'); return; }
+      isSpinning = true;
+      spinBtnEl.disabled = true;
+      resultPanelEl.style.display = 'none';
+      await db.ref(`rooms/${currentRoomId}/isSpinning`).set({ playerId: currentPlayerId, username: currentUsername, startTime: Date.now() });
+      const pool = getActivePool();
+      if (pool.length === 0) { alert('Nenhum time disponível'); return; }
+      const winnerIndex = Math.floor(Math.random()*pool.length);
+      const winner = pool[winnerIndex];
+      let extended=[];
+      for (let i=0;i<4;i++) extended = extended.concat(shuffle([...pool]));
+      const targetIndex = Math.min(60, extended.length-10);
+      extended[targetIndex] = winner;
+      const spinData = { items: extended.map(it=>({name:it.name,league:it.league})), targetIndex, duration:5000, startTime:Date.now(), playerId:currentPlayerId, username:currentUsername };
+      await db.ref(`rooms/${currentRoomId}/spinData`).set(spinData);
+      renderSpinItems(spinData.items);
+      animateToIndex(spinData.targetIndex, spinData.duration);
+      setTimeout(async () => {
+        await db.ref(`rooms/${currentRoomId}/lastResult`).set({ winner: winner.name, league: winner.league, username: currentUsername, playerId: currentPlayerId, timestamp: Date.now() });
+        await db.ref(`rooms/${currentRoomId}/isSpinning`).remove();
+        await db.ref(`rooms/${currentRoomId}/spinData`).remove();
+        showResult({ winner: winner.name, league: winner.league, username: currentUsername });
+        await advanceTurn();
+        await updateSpinButtonState();
+        isSpinning = false;
+        spinBtnEl.disabled = false;
+        onSpinFinished();
+      }, spinData.duration);
+    }
+
+    function renderSpinItems(items){
+      rouletteContainerEl.style.transition='none';
+      rouletteContainerEl.style.transform='translateX(0px)';
+      rouletteContainerEl.innerHTML='';
+      items.forEach(it => {
+        const d=document.createElement('div'); d.className='roulette-item';
+        d.innerHTML = `<div>${it.name}</div><div style="font-size:0.7rem;color:#94a3b8;margin-top:4px">${it.league}</div>`;
+        rouletteContainerEl.appendChild(d);
+      });
+      void rouletteContainerEl.offsetHeight;
+    }
+    function animateToIndex(index,duration){
+      const wrapperWidth = document.querySelector('.roulette-wrapper').offsetWidth;
+      const centerOffset = (wrapperWidth/2) - (ITEM_WIDTH/2) - 5;
+      const targetX = -(index * ITEM_WIDTH) + centerOffset;
+      rouletteContainerEl.style.transition = `transform ${duration}ms cubic-bezier(0.15,0.85,0.35,1)`;
+      rouletteContainerEl.style.transform = `translateX(${targetX}px)`;
+    }
+
+    function setupSpinListener(){
+      if (!currentRoomId) return;
+      db.ref(`rooms/${currentRoomId}/spinData`).on('value', snap => {
+        const d = snap.val();
+        if (!d) return;
+        if (d.playerId === currentPlayerId) return;
+        renderSpinItems(d.items);
+        const now = Date.now();
+        const elapsed = Math.max(0, now - d.startTime);
+        const remaining = Math.max(0, (d.duration || 5000) - elapsed);
+        if (remaining <= 0) {
+          const wrapperWidth = document.querySelector('.roulette-wrapper').offsetWidth;
+          const centerOffset = (wrapperWidth/2) - (ITEM_WIDTH/2) - 5;
+          const targetX = -(d.targetIndex * ITEM_WIDTH) + centerOffset;
+          rouletteContainerEl.style.transition='none';
+          rouletteContainerEl.style.transform = `translateX(${targetX}px)`;
+          onSpinFinished();
+          return;
+        }
+        requestAnimationFrame(()=>requestAnimationFrame(()=> {
+          rouletteContainerEl.style.transition = `transform ${remaining}ms cubic-bezier(0.15,0.85,0.35,1)`;
+          const wrapperWidth = document.querySelector('.roulette-wrapper').offsetWidth;
+          const centerOffset = (wrapperWidth/2) - (ITEM_WIDTH/2) - 5;
+          const targetX = -(d.targetIndex * ITEM_WIDTH) + centerOffset;
+          rouletteContainerEl.style.transform = `translateX(${targetX}px)`;
+        }));
+        spinIndicatorEl.style.display='block';
+        spinBtnEl.disabled = true;
+        setTimeout(()=>{ spinIndicatorEl.style.display='none'; if (!isSpinning) spinBtnEl.disabled=false; onSpinFinished(); }, remaining + 50);
+      });
+    }
+
+    function showResult(r){
+      resultTeamEl.textContent = r.winner || '-';
+      resultLeagueEl.textContent = r.league || '-';
+      resultPlayerEl.textContent = `🎯 ${r.username} sorteou`;
+      resultPanelEl.style.display = 'block';
+    }
+
+    function onSpinFinished(){
+      isSpinning = false;
+      if (window.__pendingSettings) {
+        applySettings(window.__pendingSettings);
+        window.__pendingSettings = null;
+      }
+    }
+
+    async function hostRemovePlayer(targetId) {
+      if (!currentRoomId || !isHost) return;
+      try {
+        await db.ref(`rooms/${currentRoomId}/players/${targetId}`).remove();
+        await removeFromTurnOrderAndNormalize(targetId);
+        await updateSpinButtonState();
+      } catch(e){ console.warn(e); }
+    }
+
+    async function leaveRoomCleanup(){
+      if (!currentRoomId) return;
+      try { await db.ref(`rooms/${currentRoomId}/players/${currentPlayerId}`).remove(); } catch(e){}
+      try { await db.ref(`rooms/${currentRoomId}/turnOrder`).transaction(current => { if (!current || !Array.isArray(current)) return current; return current.filter(id => id !== currentPlayerId); }); } catch(e){}
+      if (isHost && currentRoomId) { try { await db.ref(`rooms/${currentRoomId}`).remove(); } catch(e){} }
+      try { if (playerRef) playerRef.onDisconnect().cancel().catch(()=>{}); } catch(e){}
+      try { if (hostRef) hostRef.onDisconnect().cancel().catch(()=>{}); } catch(e){}
+      try { if (settingsRef) settingsRef.off(); } catch(e){}
+      try { db.ref(`rooms/${currentRoomId}/players`).off(); db.ref(`rooms/${currentRoomId}/lastResult`).off(); db.ref(`rooms/${currentRoomId}/isSpinning`).off(); db.ref(`rooms/${currentRoomId}/spinData`).off(); db.ref(`rooms/${currentRoomId}/turnOrder`).off(); db.ref(`rooms/${currentRoomId}/currentTurnIndex`).off(); } catch(e){}
+      localStorage.removeItem(KEY_ROOM);
+      currentRoomId = '';
+      document.getElementById('loginArea').style.display = 'block';
+      roomCardEl.style.display = 'none';
+    }
+
+    spinBtnEl.addEventListener('click', () => doSpin());
+    copyRoomBtnEl.addEventListener('click', () => { if (!currentRoomId) return; navigator.clipboard.writeText(currentRoomId).then(()=> alert('Código copiado!')); });
+
+    // autofill stored username
+    const storedName = localStorage.getItem(KEY_NAME);
+    if (storedName) usernameInputEl.value = storedName;
+
+    // allow Enter on username to focus code input
+    usernameInputEl.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        // if joinBox hidden, show it; else focus code input
+        if (joinBoxEl.style.display === 'none' || joinBoxEl.style.display === '') {
+          joinBoxEl.style.display = 'block';
+        }
+        joinCodeInputEl.focus();
+      }
+    });
+
+    // enter by URL param
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomParam = urlParams.get('room');
+    if (roomParam && /^\d{6}$/.test(roomParam)) {
+      joinCodeInputEl.value = roomParam;
+      // auto-open join box for convenience
+      joinBoxEl.style.display = 'block';
+    }
+
+    // try auto-join stored room if host still online
+    (function tryAutoJoinStored(){
+      const storedRoom = localStorage.getItem(KEY_ROOM);
+      const storedUser = localStorage.getItem(KEY_NAME);
+      if (storedRoom && storedUser) {
+        db.ref(`rooms/${storedRoom}/host`).get().then(snap => {
+          const v = snap.val();
+          if (v && v.online === true) {
+            currentUsername = storedUser;
+            usernameInputEl.value = storedUser;
+            enterRoom(storedRoom, false).catch(()=>{});
+          }
+        }).catch(()=>{});
+      }
     })();
-
-    // End of script placeholder. The actual file you paste/run must include the full JS implementation (unchanged).
-    // If you want, I can now paste the full file again including the entire JS body inline (no changes) so it's ready to run.
   </script>
 </body>
 </html>
