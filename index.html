@@ -7,7 +7,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-database-compat.js"></script>
   <style>
-    /* (estilos iguais ao anterior — mantidos para brevidade) */
     :root{--bg-color:#0b0f19;--card-bg:#1e293b;--accent-color:#00f2fe;--accent-gradient:linear-gradient(135deg,#00f2fe 0%,#4facfe 100%);--text-color:#f8fafc;--border-color:#334155}
     *{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif}
     body{background:var(--bg-color);color:var(--text-color);display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:20px}
@@ -16,10 +15,11 @@
     header p{color:#94a3b8;font-size:1.1rem}
     .login-modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);display:flex;justify-content:center;align-items:center;z-index:1000}
     .login-modal.hidden{display:none}
-    .login-container{background:var(--card-bg);border-radius:16px;padding:28px;max-width:420px;border:1px solid var(--border-color);text-align:center}
+    .login-container{background:var(--card-bg);border-radius:16px;padding:28px;max-width:480px;border:1px solid var(--border-color);text-align:center}
     .login-container h2{margin-bottom:14px;color:var(--accent-color)}
+    .login-row{display:flex;gap:8px;align-items:center}
     .login-container input{width:100%;padding:10px;margin-bottom:10px;background:#0f172a;color:var(--text-color);border:1px solid var(--border-color);border-radius:8px;font-size:1rem}
-    .btn-row{display:flex;gap:10px}
+    .btn-row{display:flex;gap:10px;margin-top:8px}
     .btn{flex:1;padding:10px;border-radius:8px;border:none;cursor:pointer;font-weight:700;text-transform:uppercase}
     .btn.create{background:linear-gradient(135deg,#34d399,#60a5fa);color:#06202a}
     .btn.join{background:var(--accent-gradient);color:#0f172a}
@@ -50,18 +50,35 @@
     .result-panel{margin-top:12px;padding:16px;background:linear-gradient(180deg,rgba(16,185,129,0.1) 0%,rgba(16,185,129,0) 100%);border:1px solid rgba(16,185,129,0.25);border-radius:10px;text-align:center;display:none}
     .result-panel .team-name{font-size:2rem;font-weight:800;color:#fff}
     .copy-btn{background:#334155;color:var(--text-color);border:none;padding:6px 10px;border-radius:6px;cursor:pointer}
+    /* modal small copy button */
+    .modal-copy{background:#334155;color:var(--text-color);border:none;padding:8px 10px;border-radius:8px;cursor:pointer;margin-left:8px}
   </style>
 </head>
 <body>
   <div class="login-modal" id="loginModal">
     <div class="login-container">
       <h2>🎮 Roleta EA FC 26</h2>
-      <input id="usernameInput" placeholder="Seu Nome" />
-      <input id="roomInput" placeholder="ID da Sala (ou deixe em branco para criar)" />
-      <div class="btn-row" style="margin-top:10px">
+
+      <!-- Nome -->
+      <div style="margin-bottom:8px;text-align:left;">
+        <label for="usernameInput" style="font-weight:600;color:#cbd5e1;">Seu Nome</label>
+        <input id="usernameInput" placeholder="Seu Nome" />
+      </div>
+
+      <!-- Sala (preenchida por link; pode ser readonly se veio por ?room) -->
+      <div style="margin-bottom:10px;text-align:left;">
+        <label for="roomInput" style="font-weight:600;color:#cbd5e1;">Código da Sala</label>
+        <div class="login-row">
+          <input id="roomInput" placeholder="ID da Sala (ou deixe em branco para criar)" />
+          <button id="modalCopyBtn" class="modal-copy" title="Copiar código">📋</button>
+        </div>
+      </div>
+
+      <div class="btn-row" id="modalButtons">
         <button class="btn create" id="createBtn">Criar Sala</button>
         <button class="btn join" id="joinBtn">Entrar</button>
       </div>
+
       <div style="margin-top:10px">
         <div class="status-badge" id="statusBadge">Conectando...</div>
       </div>
@@ -164,7 +181,7 @@
       db = firebase.database(app);
     }
 
-    // teams DB (same as before)
+    // teams DB
     const database = {
       premier: { name: "Premier League", teams: ["Arsenal","Aston Villa","Bournemouth","Brentford","Brighton","Chelsea","Crystal Palace","Everton","Fulham","Ipswich Town","Leicester City","Liverpool","Manchester City","Manchester United","Newcastle United","Nottingham Forest","Southampton","Tottenham Hotspur","West Ham","Wolverhampton"] },
       bundesliga: { name: "Bundesliga", teams: ["Bayer Leverkusen","Bayern de Munique","Borussia Dortmund","Borussia Mönchengladbach","Eintracht Frankfurt","FC Augsburg","FC Heidenheim","FC St. Pauli","Holstein Kiel","Mainz 05","RB Leipzig","SC Freiburg","SV Werder Bremen","TSG Hoffenheim","Union Berlin","VfB Stuttgart","VfL Bochum","VfL Wolfsburg"] },
@@ -182,13 +199,46 @@
     const copyRoomBtn = document.getElementById('copyRoomBtn');
     const leaveBtn = document.getElementById('leaveBtn');
 
+    const createBtn = document.getElementById('createBtn');
+    const joinBtn = document.getElementById('joinBtn');
+    const modalCopyBtn = document.getElementById('modalCopyBtn');
+    const roomInput = document.getElementById('roomInput');
+    const usernameInput = document.getElementById('usernameInput');
+
     // prefill username input if exists
     const storedUsername = localStorage.getItem(STORED_USERNAME_KEY);
-    if (storedUsername) document.getElementById('usernameInput').value = storedUsername;
+    if (storedUsername) usernameInput.value = storedUsername;
 
-    // create room
+    initFirebase();
+
+    // read room param
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomFromURL = urlParams.get('room');
+
+    // If user came via link (room param), lock room input and hide Create button
+    if (roomFromURL) {
+      roomInput.value = roomFromURL;
+      roomInput.disabled = true;
+      createBtn.style.display = 'none'; // hide create
+      modalCopyBtn.style.display = 'inline-block';
+      // we DO NOT auto-join here; user must click Entrar
+    } else {
+      // no room param: allow editing and show both buttons
+      roomInput.disabled = false;
+      modalCopyBtn.style.display = 'inline-block';
+      createBtn.style.display = 'inline-block';
+    }
+
+    // Modal copy button: copies the code currently in roomInput
+    modalCopyBtn.addEventListener('click', () => {
+      const val = roomInput.value.trim();
+      if (!val) { alert('Nenhum código para copiar.'); return; }
+      navigator.clipboard.writeText(val).then(() => alert('Código copiado! 📋')).catch(() => alert('Não foi possível copiar.'));
+    });
+
+    // Create room behavior remains the same
     function createRoom(){
-      const username = document.getElementById('usernameInput').value.trim();
+      const username = usernameInput.value.trim();
       if (!username){ alert('Digite seu nome antes de criar a sala.'); return; }
       localStorage.setItem(STORED_USERNAME_KEY, username);
       const id = 'sala-' + Math.random().toString(36).substr(2,8);
@@ -196,15 +246,14 @@
       const hostObj = { playerId: currentPlayerId, username: username, online: true, createdAt: firebase.database.ServerValue.TIMESTAMP };
       hostNode.set(hostObj).then(() => {
         try { hostNode.onDisconnect().update({ online: false, lastSeen: firebase.database.ServerValue.TIMESTAMP }); hostOnDisconnectRegistered = true; } catch(e){ console.warn(e); }
-        // store chosen room for auto-join on reload
         localStorage.setItem(STORED_ROOM_KEY, id);
         joinRoom(id, true);
       }).catch(err => { console.error(err); alert('Erro ao criar sala'); });
     }
 
-    // join room
+    // Join room: used when user clicks Entrar
     async function joinRoom(roomId, asHost=false){
-      const username = document.getElementById('usernameInput').value.trim();
+      const username = usernameInput.value.trim();
       if (!username){ alert('Digite seu nome para entrar na sala.'); return; }
       localStorage.setItem(STORED_USERNAME_KEY, username);
       localStorage.setItem(STORED_ROOM_KEY, roomId);
@@ -217,23 +266,19 @@
       roomDisplay.textContent = roomId;
       document.getElementById('statusBadge').textContent = 'Conectado ✅';
 
-      // prepare presence: do nothing until .info/connected shows true
+      // presence: wait for .info/connected
       playerRef = db.ref(`rooms/${roomId}/players/${currentPlayerId}`);
       connectedRef = db.ref('.info/connected');
 
       connectedRef.on('value', snap => {
         if (snap && snap.val() === true){
-          // register onDisconnect to mark offline + lastSeen
           if (!onDisconnectRegistered && playerRef) {
             try { playerRef.onDisconnect().update({ online: false, lastSeen: firebase.database.ServerValue.TIMESTAMP }); } catch(e){ console.warn(e); }
             onDisconnectRegistered = true;
           }
-          // set presence online
           if (playerRef) {
             playerRef.set({ username: currentUsername, joinedAt: firebase.database.ServerValue.TIMESTAMP, online: true }).catch(()=>{});
           }
-        } else {
-          // disconnected — nothing to do; server will mark offline on onDisconnect
         }
       });
 
@@ -245,7 +290,6 @@
         isHost = roomHostId === currentPlayerId;
         shareLinkContainer.style.display = isHost ? 'flex' : 'none';
 
-        // if I'm host, ensure host node is online:true and onDisconnect registered
         if (isHost) {
           try {
             hostRef.update({ online: true, username: currentUsername }).catch(()=>{});
@@ -256,7 +300,6 @@
           } catch(e){ console.warn(e); }
         }
 
-        // try election if needed (random small delay)
         setTimeout(() => electHostIfNeeded(), Math.floor(Math.random()*400));
       });
 
@@ -274,13 +317,13 @@
       updatePoolInfo();
     }
 
+    // elect host if needed (same as previous logic)
     async function electHostIfNeeded(){
       if (!currentRoomId) return;
       try {
         const hostSnap = await db.ref(`rooms/${currentRoomId}/host`).get();
         const hostVal = hostSnap.val();
         const now = Date.now();
-
         if (hostVal && hostVal.online === true) return;
         if (hostVal && hostVal.online === false && hostVal.lastSeen && (now - hostVal.lastSeen) < GRACE_MS) return;
 
@@ -318,15 +361,14 @@
       } catch (e) { console.warn('electHostIfNeeded error', e); }
     }
 
-    // UI / roulette (same as before)
+    // UI / roulette code (unchanged)
     function getActivePool(){ const selected = document.getElementById('leagueSelect').value; let pool = []; if (selected === 'all') { Object.keys(database).forEach(k => database[k].teams.forEach(t => pool.push({ name: t, league: database[k].name }))); } else { database[selected].teams.forEach(t => pool.push({ name: t, league: database[selected].name })); } return pool; }
     function updatePoolInfo(){ currentPool = getActivePool(); document.getElementById('poolInfo').textContent = `${currentPool.length} times disponíveis`; setupStaticRoulette(); }
     function setupStaticRoulette(){ const container=document.getElementById('rouletteContainer'); container.style.transition='none'; container.style.transform='translateX(0px)'; container.innerHTML=''; const pool=getActivePool(); const displayPool = pool.length>5?pool.slice(0,10):[...pool,...pool,...pool]; displayPool.forEach(item=>{ const d=document.createElement('div'); d.className='roulette-item'; d.innerHTML=`<div>${item.name}</div><div class="league-tag">${item.league}</div>`; container.appendChild(d); }); }
     function shuffle(a){ return a.sort(()=>Math.random()-0.5); }
 
     function updatePlayersList(players){
-      const listContainer=document.getElementById('playersList'); listContainer.innerHTML='';
-      const playerArray = Object.entries(players||{}).map(([id,d])=>({id,...d}));
+      const listContainer=document.getElementById('playersList'); listContainer.innerHTML=''; const playerArray = Object.entries(players||{}).map(([id,d])=>({id,...d}));
       document.getElementById('playersCount').textContent = `${playerArray.length} Jogador${playerArray.length!==1?'es':''}`;
       playerArray.forEach(player => {
         const badge=document.createElement('div'); badge.className='player-badge'+(player.id===currentPlayerId?' current':'');
@@ -340,7 +382,7 @@
 
     function showResult(r){ document.getElementById('spinIndicator').classList.add('hidden'); document.getElementById('resultTeam').textContent = r.winner || '-'; document.getElementById('resultLeague').textContent = r.league || '-'; document.getElementById('resultPlayer').textContent = `🎯 ${r.username} sorteou`; document.getElementById('resultPanel').style.display='block'; if (!isSpinning) document.getElementById('spinBtn').disabled=false; }
 
-    // spin / spinData (same as before)
+    // spin
     function spin(){ if (isSpinning) return; const spinBtn=document.getElementById('spinBtn'); const pool=getActivePool(); if (pool.length===0){ alert('Nenhum time disponível!'); return; } isSpinning=true; spinBtn.disabled=true; document.getElementById('resultPanel').style.display='none'; db.ref(`rooms/${currentRoomId}/isSpinning`).set({ playerId: currentPlayerId, username: currentUsername, startTime: Date.now() }); const winnerIndex=Math.floor(Math.random()*pool.length); const winner=pool[winnerIndex]; let extendedItems=[]; for (let i=0;i<4;i++) extendedItems=extendedItems.concat(shuffle([...pool])); const targetPositionIndex=Math.min(60, extendedItems.length-10); extendedItems[targetPositionIndex]=winner; const spinData={ items: extendedItems.map(it=>({name:it.name,league:it.league})), targetIndex:targetPositionIndex, duration:5000, startTime:Date.now(), playerId:currentPlayerId, username:currentUsername }; db.ref(`rooms/${currentRoomId}/spinData`).set(spinData); const container=document.getElementById('rouletteContainer'); container.style.transition='none'; container.style.transform='translateX(0px)'; container.innerHTML=''; spinData.items.forEach(item=>{ const d=document.createElement('div'); d.className='roulette-item'; d.innerHTML=`<div>${item.name}</div><div class="league-tag">${item.league}</div>`; container.appendChild(d); }); container.offsetHeight; const wrapperWidth=document.querySelector('.roulette-wrapper').offsetWidth; const centerOffset=(wrapperWidth/2)-(ITEM_WIDTH/2)-5; const targetX = -(spinData.targetIndex * ITEM_WIDTH) + centerOffset; container.style.transition = `transform ${spinData.duration}ms cubic-bezier(0.15,0.85,0.35,1)`; container.style.transform = `translateX(${targetX}px)`; setTimeout(()=>{ db.ref(`rooms/${currentRoomId}/lastResult`).set({ winner: winner.name, league: winner.league, username: currentUsername, playerId: currentPlayerId, timestamp: Date.now() }); db.ref(`rooms/${currentRoomId}/isSpinning`).remove(); db.ref(`rooms/${currentRoomId}/spinData`).remove(); showResult({ winner: winner.name, league: winner.league, username: currentUsername }); isSpinning=false; spinBtn.disabled=false; }, spinData.duration); }
 
     function setupSpinListener(){ if (!currentRoomId) return; db.ref(`rooms/${currentRoomId}/spinData`).on('value', snap => { const d = snap.val(); if (!d) return; if (d.playerId === currentPlayerId) return; playSpinFromData(d); }); }
@@ -361,68 +403,46 @@
         hostOnDisconnectRegistered = false;
       }
       if (hostRef){ try{ hostRef.off(); hostRef=null; } catch(e){} }
-      // clear stored room to avoid auto-join after leaving voluntarily
       localStorage.removeItem(STORED_ROOM_KEY);
       currentRoomId=''; currentUsername=''; isSpinning=false; roomHostId=null; isHost=false;
       document.getElementById('mainContainer').style.display='none';
       loginModal.classList.remove('hidden');
       document.getElementById('statusBadge').textContent='Conectando...';
+      // when leaving, re-enable modal to allow create again
+      roomInput.disabled = false;
+      createBtn.style.display = 'inline-block';
     }
 
-    // share / copy / bindings
+    // share / copy
     function copyRoomLink(){ const link = `${window.location.origin}${window.location.pathname}?room=${currentRoomId}`; navigator.clipboard.writeText(link).then(()=> alert('Link copiado! 📋')); }
     function shareLink(){ const link = `${window.location.origin}${window.location.pathname}?room=${currentRoomId}`; if (navigator.share){ navigator.share({ title:'Convite: Roleta EA FC 26', text:'Venha jogar!', url:link }).catch(()=>copyRoomLink()); } else copyRoomLink(); }
 
-    document.getElementById('createBtn').addEventListener('click', createRoom);
-    document.getElementById('joinBtn').addEventListener('click', () => {
-      const roomId = document.getElementById('roomInput').value.trim();
+    // bindings
+    createBtn.addEventListener('click', createRoom);
+    joinBtn.addEventListener('click', () => {
+      const roomId = roomInput.value.trim();
       if (!roomId){ alert('Preencha o ID da sala ou clique em Criar Sala.'); return; }
-      // store intended room
       localStorage.setItem(STORED_ROOM_KEY, roomId);
       db.ref(`rooms/${roomId}`).get().then(()=> joinRoom(roomId, false)).catch(err=>{ console.error(err); alert('Erro ao entrar na sala'); });
     });
     document.getElementById('spinBtn').addEventListener('click', spin);
     document.getElementById('leagueSelect').addEventListener('change', updatePoolInfo);
-    document.getElementById('usernameInput').addEventListener('keypress', e => { if (e.key==='Enter'){ const rid = document.getElementById('roomInput').value.trim(); if (rid) { localStorage.setItem(STORED_ROOM_KEY, rid); joinRoom(rid,false); } }});
-    document.getElementById('roomInput').addEventListener('keypress', e => { if (e.key==='Enter'){ const rid = document.getElementById('roomInput').value.trim(); if (rid) { localStorage.setItem(STORED_ROOM_KEY, rid); joinRoom(rid,false); } }});
+    usernameInput.addEventListener('keypress', e => { if (e.key==='Enter'){ const rid = roomInput.value.trim(); if (rid) { localStorage.setItem(STORED_ROOM_KEY, rid); joinRoom(rid,false); } }});
+    roomInput.addEventListener('keypress', e => { if (e.key==='Enter'){ const rid = roomInput.value.trim(); if (rid) { localStorage.setItem(STORED_ROOM_KEY, rid); joinRoom(rid,false); } }});
     shareBtn.addEventListener('click', shareLink);
     copyRoomBtn.addEventListener('click', copyRoomLink);
     leaveBtn.addEventListener('click', leaveRoomCleanup);
 
-    // boot
-    initFirebase();
-
-    // auto-join logic on load: prefer stored room, else ?room param
-    (function autoJoinOnLoad(){
-      const urlParams = new URLSearchParams(window.location.search);
-      const roomParam = urlParams.get('room');
-      const storedRoom = localStorage.getItem(STORED_ROOM_KEY);
-      const roomToJoin = storedRoom || roomParam;
-      const storedUser = localStorage.getItem(STORED_USERNAME_KEY);
-
-      // if we have both a stored room and username, auto-join
-      if (roomToJoin && storedUser) {
-        // prefill username input and join
-        document.getElementById('usernameInput').value = storedUser;
-        // small timeout to allow firebase init to complete
-        setTimeout(() => {
-          // ensure db exists (defensive)
-          try {
-            joinRoom(roomToJoin, false);
-          } catch(e) {
-            console.warn('Auto join failed:', e);
-          }
-        }, 300);
-      } else if (roomParam) {
-        // prefill room input so user can click Entrar
-        document.getElementById('roomInput').value = roomParam;
+    // Auto-fill room input from stored room if present and no ?room param (but don't auto-join)
+    (function fillRoomFromStored(){
+      if (!roomFromURL){
+        const storedRoom = localStorage.getItem(STORED_ROOM_KEY);
+        if (storedRoom) roomInput.value = storedRoom;
       }
     })();
 
-    // try to keep presence during pagehide/unload (best effort)
+    // best-effort presence update on unload
     window.addEventListener('beforeunload', () => {
-      // do not remove host/room on reload — we rely on onDisconnect marking offline
-      // attempt to write lastSeen quickly
       try { if (playerRef) playerRef.update({ online:false, lastSeen: firebase.database.ServerValue.TIMESTAMP }); } catch(e){}
     });
     window.addEventListener('pagehide', () => {
