@@ -63,6 +63,7 @@
     .roulette-wrapper{ margin-top:14px; position:relative; height:120px; border-radius:10px; background:#0f172a; overflow:hidden; border:2px solid var(--border) }
     .roulette-wrapper::before{ content:''; position:absolute; left:50%; top:0; width:4px; height:100%; background:#ff0055; transform:translateX(-50%); z-index:10 }
     .roulette-container{ position:absolute; left:0; top:0; height:100%; display:flex; align-items:center; will-change:transform }
+    /* ensure item width is consistent; use this as baseline but JS measures actual width */
     .roulette-item{ min-width:180px; height:80px; margin:0 5px; background:linear-gradient(145deg,#1e293b,#0f172a); border-radius:8px; border:1px solid #334155; display:flex; flex-direction:column; justify-content:center; align-items:center; font-weight:700; color:#e2e8f0 }
 
     .controls{ margin-top:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap }
@@ -173,7 +174,7 @@
   </div>
 
   <script>
-    // Full JS implementation (Firebase + app logic) with the fix: store the final spinData item in lastResult.
+    /* FULL JS with dynamic item width calculations to ensure visual center matches saved result */
     const firebaseConfig = {
       apiKey: "AIzaSyCjfxIJyKBsg9U_GJu4JP2Taq6fMXiGpMA",
       authDomain: "roleta-ea-fc-cc40c.firebaseapp.com",
@@ -184,26 +185,19 @@
       appId: "1:394316068027:web:39151123593571769b659e"
     };
 
-    // STORAGE KEYS
     const KEY_PLAYER = 'roleta_player_id';
     const KEY_NAME = 'roleta_username';
     const KEY_ROOM = 'roleta_room_id';
 
-    // persisted id
     let currentPlayerId = localStorage.getItem(KEY_PLAYER);
-    if (!currentPlayerId) {
-      currentPlayerId = Math.random().toString(36).substr(2,9);
-      localStorage.setItem(KEY_PLAYER, currentPlayerId);
-    }
+    if (!currentPlayerId) { currentPlayerId = Math.random().toString(36).substr(2,9); localStorage.setItem(KEY_PLAYER, currentPlayerId); }
 
     let db;
     let currentUsername = '';
     let currentRoomId = localStorage.getItem(KEY_ROOM) || '';
     let currentPool = [];
     let isSpinning = false;
-    const ITEM_WIDTH = 190;
 
-    // presence/host/settings
     let playerRef = null;
     let connectedRef = null;
     let onDisconnectRegistered = false;
@@ -212,12 +206,10 @@
     let isHost = false;
     let hostOnDisconnectRegistered = false;
     let settingsRef = null;
-    const GRACE_MS = 15000;
 
-    // turn order cache
     let latestTurnOrder = [];
 
-    // DOM refs
+    // DOM
     const usernameInputEl = document.getElementById('usernameInput');
     const createBtnEl = document.getElementById('createBtn');
     const showJoinBtnEl = document.getElementById('showJoinBtn');
@@ -248,13 +240,9 @@
     const hostStatusEl = document.getElementById('hostStatus');
     const turnBannerEl = document.getElementById('turnBanner');
 
-    function initFirebase(){
-      const app = firebase.initializeApp(firebaseConfig);
-      db = firebase.database(app);
-    }
+    function initFirebase(){ const app = firebase.initializeApp(firebaseConfig); db = firebase.database(app); }
     initFirebase();
 
-    // teams DB
     const teamsDB = {
       premier: { name: "Premier League", teams: ["Arsenal","Aston Villa","Bournemouth","Brentford","Brighton","Chelsea","Crystal Palace","Everton","Fulham","Ipswich Town","Leicester City","Liverpool","Manchester City","Manchester United","Newcastle United","Nottingham Forest","Southampton","Tottenham Hotspur","West Ham","Wolverhampton"] },
       bundesliga: { name: "Bundesliga", teams: ["Bayer Leverkusen","Bayern de Munique","Borussia Dortmund","Borussia Mönchengladbach","Eintracht Frankfurt","FC Augsburg","FC Heidenheim","FC St. Pauli","Holstein Kiel","Mainz 05","RB Leipzig","SC Freiburg","SV Werder Bremen","TSG Hoffenheim","Union Berlin","VfB Stuttgart","VfL Bochum","VfL Wolfsburg"] },
@@ -263,7 +251,6 @@
       laliga: { name: "La Liga Espanha", teams: ["Alavés","Athletic Bilbao","Atlético de Madrid","Barcelona","Celta de Vigo","Espanyol","Getafe","Girona","Las Palmas","Leganés","Mallorca","Osasuna","Rayo Vallecano","Real Betis","Real Madrid","Real Sociedad","Sevilla","Valencia","Valladolid","Villarreal"] }
     };
 
-    // helpers
     function shuffle(a){ return a.sort(()=>Math.random()-0.5); }
     function getActivePoolFromLeague(leagueValue){
       let pool=[];
@@ -276,6 +263,7 @@
     }
     function getActivePool(){ return getActivePoolFromLeague(leagueSelectEl.value); }
     function updatePoolInfo(){ currentPool = getActivePool(); poolInfoEl.textContent = `${currentPool.length} times disponíveis`; setupStaticRoulette(); }
+
     function setupStaticRoulette(){
       const pool = getActivePool();
       rouletteContainerEl.style.transition='none';
@@ -290,6 +278,78 @@
       });
     }
 
+    // compute full width of one item including margins
+    function getItemFullWidth() {
+      const item = rouletteContainerEl.querySelector('.roulette-item');
+      if (!item) {
+        // fallback: use 180 + 10 margin approximate
+        return 180 + 10;
+      }
+      const style = window.getComputedStyle(item);
+      const marginLeft = parseFloat(style.marginLeft) || 0;
+      const marginRight = parseFloat(style.marginRight) || 0;
+      return item.offsetWidth + marginLeft + marginRight;
+    }
+
+    function computeCenterOffset(itemFullWidth) {
+      const wrapperWidth = document.querySelector('.roulette-wrapper').offsetWidth;
+      // center offset so that index * itemFullWidth positions that item centered
+      return (wrapperWidth - itemFullWidth) / 2;
+    }
+
+    function animateToIndex(index, duration) {
+      const itemFullWidth = getItemFullWidth();
+      const centerOffset = computeCenterOffset(itemFullWidth);
+      const targetX = -(index * itemFullWidth) + centerOffset;
+      rouletteContainerEl.style.transition = `transform ${duration}ms cubic-bezier(0.15,0.85,0.35,1)`;
+      rouletteContainerEl.style.transform = `translateX(${targetX}px)`;
+    }
+
+    // render items and immediately measure actual widths
+    function renderSpinItems(items){
+      rouletteContainerEl.style.transition='none';
+      rouletteContainerEl.style.transform='translateX(0px)';
+      rouletteContainerEl.innerHTML='';
+      items.forEach(it => {
+        const d=document.createElement('div');
+        d.className='roulette-item';
+        d.innerHTML = `<div>${it.name}</div><div style="font-size:0.7rem;color:#94a3b8;margin-top:4px">${it.league}</div>`;
+        rouletteContainerEl.appendChild(d);
+      });
+      // force reflow so measurements are up-to-date
+      void rouletteContainerEl.offsetHeight;
+    }
+
+    function setupSpinListener(){
+      if (!currentRoomId) return;
+      db.ref(`rooms/${currentRoomId}/spinData`).on('value', snap => {
+        const d = snap.val();
+        if (!d) return;
+        if (d.playerId === currentPlayerId) return;
+        renderSpinItems(d.items);
+        const now = Date.now();
+        const elapsed = Math.max(0, now - d.startTime);
+        const remaining = Math.max(0, (d.duration || 5000) - elapsed);
+        const itemFullWidth = getItemFullWidth();
+        const centerOffset = computeCenterOffset(itemFullWidth);
+        const targetX = -(d.targetIndex * itemFullWidth) + centerOffset;
+
+        if (remaining <= 0) {
+          rouletteContainerEl.style.transition='none';
+          rouletteContainerEl.style.transform = `translateX(${targetX}px)`;
+          onSpinFinished();
+          return;
+        }
+        requestAnimationFrame(()=>requestAnimationFrame(()=> {
+          rouletteContainerEl.style.transition = `transform ${remaining}ms cubic-bezier(0.15,0.85,0.35,1)`;
+          rouletteContainerEl.style.transform = `translateX(${targetX}px)`;
+        }));
+        spinIndicatorEl.style.display='block';
+        spinBtnEl.disabled = true;
+        setTimeout(()=>{ spinIndicatorEl.style.display='none'; if (!isSpinning) spinBtnEl.disabled=false; onSpinFinished(); }, remaining + 50);
+      });
+    }
+
     async function generateUniqueRoomCode(attempts = 8) {
       for (let i = 0; i < attempts; i++) {
         const code = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
@@ -301,7 +361,6 @@
 
     function showNotice(msg, ms = 2500) { noticeEl.textContent = msg; setTimeout(()=> noticeEl.textContent = 'Conectando...', ms); }
 
-    // APPLY SETTINGS (league)
     function applySettings(settings) {
       if (!settings) return;
       if (typeof settings.league !== 'undefined') {
@@ -311,7 +370,6 @@
       }
     }
 
-    // Active flag per tab
     function setActiveFlag(active) {
       if (!playerRef) return;
       playerRef.update({ active: !!active }).catch(()=>{});
@@ -321,7 +379,6 @@
       updateSpinButtonState().catch(()=>{});
     });
 
-    // remove player from turnOrder and normalize index
     async function removeFromTurnOrderAndNormalize(playerId) {
       if (!currentRoomId) return;
       await db.ref(`rooms/${currentRoomId}/turnOrder`).transaction(current => {
@@ -338,7 +395,6 @@
       });
     }
 
-    // Update spin button state (centralized)
     async function updateSpinButtonState() {
       try {
         if (!currentRoomId) { spinBtnEl.disabled = true; updateTurnBanner(false, ''); return; }
@@ -716,6 +772,7 @@
       await db.ref(`rooms/${currentRoomId}/spinData`).set(spinData);
 
       renderSpinItems(spinData.items);
+      // animate using measured widths
       animateToIndex(spinData.targetIndex, spinData.duration);
 
       setTimeout(async () => {
@@ -738,10 +795,7 @@
 
         showResult({ winner: finalItem.name, league: finalItem.league, username: currentUsername });
 
-        // advance turn safely and normalize
         await advanceTurn();
-
-        // update UI state across clients
         await updateSpinButtonState();
 
         isSpinning = false;
@@ -761,13 +815,6 @@
       });
       void rouletteContainerEl.offsetHeight;
     }
-    function animateToIndex(index,duration){
-      const wrapperWidth = document.querySelector('.roulette-wrapper').offsetWidth;
-      const centerOffset = (wrapperWidth/2) - (ITEM_WIDTH/2) - 5;
-      const targetX = -(index * ITEM_WIDTH) + centerOffset;
-      rouletteContainerEl.style.transition = `transform ${duration}ms cubic-bezier(0.15,0.85,0.35,1)`;
-      rouletteContainerEl.style.transform = `translateX(${targetX}px)`;
-    }
 
     function setupSpinListener(){
       if (!currentRoomId) return;
@@ -779,10 +826,11 @@
         const now = Date.now();
         const elapsed = Math.max(0, now - d.startTime);
         const remaining = Math.max(0, (d.duration || 5000) - elapsed);
+        const itemFullWidth = getItemFullWidth();
+        const centerOffset = computeCenterOffset(itemFullWidth);
+        const targetX = -(d.targetIndex * itemFullWidth) + centerOffset;
+
         if (remaining <= 0) {
-          const wrapperWidth = document.querySelector('.roulette-wrapper').offsetWidth;
-          const centerOffset = (wrapperWidth/2) - (ITEM_WIDTH/2) - 5;
-          const targetX = -(d.targetIndex * ITEM_WIDTH) + centerOffset;
           rouletteContainerEl.style.transition='none';
           rouletteContainerEl.style.transform = `translateX(${targetX}px)`;
           onSpinFinished();
@@ -790,9 +838,6 @@
         }
         requestAnimationFrame(()=>requestAnimationFrame(()=> {
           rouletteContainerEl.style.transition = `transform ${remaining}ms cubic-bezier(0.15,0.85,0.35,1)`;
-          const wrapperWidth = document.querySelector('.roulette-wrapper').offsetWidth;
-          const centerOffset = (wrapperWidth/2) - (ITEM_WIDTH/2) - 5;
-          const targetX = -(d.targetIndex * ITEM_WIDTH) + centerOffset;
           rouletteContainerEl.style.transform = `translateX(${targetX}px)`;
         }));
         spinIndicatorEl.style.display='block';
