@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>Roleta de Times EA FC 26 - Multiplayer</title>
     <!-- Firebase -->
     <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
@@ -17,12 +17,7 @@
             --border-color: #334155;
         }
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
 
         body {
             background-color: var(--bg-color);
@@ -34,10 +29,7 @@
             padding: 20px;
         }
 
-        header {
-            text-align: center;
-            margin-bottom: 30px;
-        }
+        header { text-align: center; margin-bottom: 30px; }
 
         header h1 {
             font-size: 2.5rem;
@@ -49,348 +41,105 @@
             letter-spacing: 1px;
         }
 
-        header p {
-            color: #94a3b8;
-            font-size: 1.1rem;
-        }
+        header p { color: #94a3b8; font-size: 1.1rem; }
 
         .login-modal {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.8);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.8); display: flex; justify-content: center; align-items: center; z-index: 1000;
         }
 
-        .login-modal.hidden {
-            display: none;
-        }
+        .login-modal.hidden { display: none; }
 
         .login-container {
-            background-color: var(--card-bg);
-            border-radius: 16px;
-            padding: 40px;
-            max-width: 400px;
-            border: 1px solid var(--border-color);
-            text-align: center;
+            background-color: var(--card-bg); border-radius: 16px; padding: 40px; max-width: 400px; border: 1px solid var(--border-color); text-align: center;
         }
 
-        .login-container h2 {
-            margin-bottom: 20px;
-            color: var(--accent-color);
-        }
+        .login-container h2 { margin-bottom: 20px; color: var(--accent-color); }
 
         .login-container input {
-            width: 100%;
-            padding: 12px;
-            margin-bottom: 15px;
-            background-color: #0f172a;
-            color: var(--text-color);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            font-size: 1rem;
-            outline: none;
+            width: 100%; padding: 12px; margin-bottom: 15px; background-color: #0f172a; color: var(--text-color);
+            border: 1px solid var(--border-color); border-radius: 8px; font-size: 1rem; outline: none;
         }
 
-        .login-container input:focus {
-            border-color: var(--accent-color);
-        }
+        .login-container input:focus { border-color: var(--accent-color); }
 
         .login-container button {
-            width: 100%;
-            padding: 12px;
-            background: var(--accent-gradient);
-            color: #0f172a;
-            border: none;
-            border-radius: 8px;
-            font-weight: 700;
-            cursor: pointer;
-            font-size: 1rem;
-            text-transform: uppercase;
+            width: 100%; padding: 12px; background: var(--accent-gradient); color: #0f172a; border: none; border-radius: 8px;
+            font-weight: 700; cursor: pointer; font-size: 1rem; text-transform: uppercase;
         }
 
-        .login-container button:hover {
-            opacity: 0.9;
-        }
+        .status-badge { display: inline-block; padding: 5px 12px; background-color: #10b981; color: white; border-radius: 20px; font-size: 0.85rem; margin-top: 10px; }
 
-        .status-badge {
-            display: inline-block;
-            padding: 5px 12px;
-            background-color: #10b981;
-            color: white;
-            border-radius: 20px;
-            font-size: 0.85rem;
-            margin-top: 10px;
-        }
+        .container { width: 100%; max-width: 900px; background-color: var(--card-bg); border-radius: 16px; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 1px solid var(--border-color); }
 
-        .container {
-            width: 100%;
-            max-width: 900px;
-            background-color: var(--card-bg);
-            border-radius: 16px;
-            padding: 25px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-            border: 1px solid var(--border-color);
-        }
+        .room-info { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid var(--border-color); flex-wrap: wrap; gap: 10px; }
 
-        .room-info {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 1px solid var(--border-color);
-            flex-wrap: wrap;
-            gap: 10px;
-        }
+        .room-id { color: #94a3b8; font-size: 0.9rem; }
+        .room-id strong { color: var(--accent-color); }
+        .players-count { background: linear-gradient(135deg, #00f2fe, #4facfe); padding: 8px 16px; border-radius: 20px; color: #0f172a; font-weight: 700; }
 
-        .room-id {
-            color: #94a3b8;
-            font-size: 0.9rem;
-        }
+        .players-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+        .player-badge { background-color: #0f172a; border: 1px solid var(--border-color); padding: 8px 12px; border-radius: 6px; font-size: 0.85rem; color: #cbd5e1; }
+        .player-badge.current { border-color: var(--accent-color); color: var(--accent-color); background-color: rgba(0,242,254,0.1); }
 
-        .room-id strong {
-            color: var(--accent-color);
-        }
-
-        .players-count {
-            background: linear-gradient(135deg, #00f2fe, #4facfe);
-            padding: 8px 16px;
-            border-radius: 20px;
-            color: #0f172a;
-            font-weight: 700;
-        }
-
-        .players-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-bottom: 20px;
-        }
-
-        .player-badge {
-            background-color: #0f172a;
-            border: 1px solid var(--border-color);
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-size: 0.85rem;
-            color: #cbd5e1;
-        }
-
-        .player-badge.current {
-            border-color: var(--accent-color);
-            color: var(--accent-color);
-            background-color: rgba(0, 242, 254, 0.1);
-        }
-
-        .controls {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            margin-bottom: 30px;
-        }
-
-        .select-group {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        label {
-            font-weight: 600;
-            color: #cbd5e1;
-        }
+        .controls { display: flex; flex-direction: column; gap: 15px; margin-bottom: 30px; }
+        .select-group { display: flex; flex-direction: column; gap: 8px; }
+        label { font-weight: 600; color: #cbd5e1; }
 
         select {
-            background-color: #0f172a;
-            color: var(--text-color);
-            border: 1px solid var(--border-color);
-            padding: 12px;
-            border-radius: 8px;
-            font-size: 1rem;
-            outline: none;
+            background-color: #0f172a; color: var(--text-color); border: 1px solid var(--border-color); padding: 12px; border-radius: 8px; font-size: 1rem; outline: none;
         }
 
-        select:focus {
-            border-color: var(--accent-color);
-        }
-
-        .pool-info {
-            font-size: 0.9rem;
-            color: #00ff87;
-            font-weight: 500;
-            text-align: right;
-        }
+        .pool-info { font-size: 0.9rem; color: #00ff87; font-weight: 500; text-align: right; }
 
         .roulette-wrapper {
-            position: relative;
-            width: 100%;
-            height: 120px;
-            background-color: #0f172a;
-            border-radius: 12px;
-            border: 2px solid var(--border-color);
-            overflow: hidden;
-            margin-bottom: 30px;
-            box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
+            position: relative; width: 100%; height: 120px; background-color: #0f172a; border-radius: 12px; border: 2px solid var(--border-color);
+            overflow: hidden; margin-bottom: 30px; box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
         }
 
         .roulette-wrapper::before {
-            content: '';
-            position: absolute;
-            left: 50%;
-            top: 0;
-            width: 4px;
-            height: 100%;
-            background-color: #ff0055;
-            z-index: 10;
-            box-shadow: 0 0 12px #ff0055;
-            transform: translateX(-50%);
+            content: ''; position: absolute; left: 50%; top: 0; width: 4px; height: 100%; background-color: #ff0055; z-index: 10; box-shadow: 0 0 12px #ff0055; transform: translateX(-50%);
         }
 
-        .roulette-container {
-            display: flex;
-            align-items: center;
-            position: absolute;
-            left: 0;
-            top: 0;
-            height: 100%;
-            will-change: transform;
-        }
-
+        .roulette-container { display: flex; align-items: center; position: absolute; left: 0; top: 0; height: 100%; will-change: transform; }
         .roulette-item {
-            min-width: 180px;
-            max-width: 180px;
-            height: 80px;
-            background: linear-gradient(145deg, #1e293b, #0f172a);
-            border: 1px solid #334155;
-            border-radius: 8px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            margin: 0 5px;
-            padding: 10px;
-            text-align: center;
-            font-weight: bold;
-            font-size: 0.95rem;
-            color: #e2e8f0;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+            min-width: 180px; max-width: 180px; height: 80px; background: linear-gradient(145deg, #1e293b, #0f172a); border: 1px solid #334155; border-radius: 8px;
+            display:flex; flex-direction: column; justify-content:center; align-items:center; margin: 0 5px; padding: 10px; text-align:center; font-weight:bold; font-size:0.95rem; color:#e2e8f0; box-shadow:0 4px 6px rgba(0,0,0,0.2);
         }
 
-        .roulette-item .league-tag {
-            font-size: 0.7rem;
-            color: #94a3b8;
-            margin-top: 4px;
-            text-transform: uppercase;
-            font-weight: 500;
-        }
+        .roulette-item .league-tag { font-size:0.7rem; color:#94a3b8; margin-top:4px; text-transform:uppercase; font-weight:500; }
 
         .spin-btn {
-            background: var(--accent-gradient);
-            color: #0f172a;
-            border: none;
-            padding: 15px 30px;
-            font-size: 1.2rem;
-            font-weight: 700;
-            border-radius: 8px;
-            cursor: pointer;
-            width: 100%;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            box-shadow: 0 4px 15px rgba(0, 242, 254, 0.4);
+            background: var(--accent-gradient); color: #0f172a; border:none; padding: 15px 30px; font-size:1.2rem; font-weight:700; border-radius:8px; cursor:pointer; width:100%; text-transform:uppercase; letter-spacing:1px; box-shadow:0 4px 15px rgba(0,242,254,0.4);
         }
 
-        .spin-btn:hover:not(:disabled) {
-            box-shadow: 0 6px 20px rgba(0, 242, 254, 0.6);
-        }
-
-        .spin-btn:disabled {
-            background: #475569;
-            color: #94a3b8;
-            cursor: not-allowed;
-        }
+        .spin-btn:hover:not(:disabled) { box-shadow:0 6px 20px rgba(0,242,254,0.6); }
+        .spin-btn:disabled { background: #475569; color: #94a3b8; cursor:not-allowed; }
 
         .result-panel {
-            margin-top: 25px;
-            padding: 20px;
-            background: linear-gradient(180deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.0) 100%);
-            border: 1px solid rgba(16, 185, 129, 0.3);
-            border-radius: 12px;
-            text-align: center;
-            display: none;
-            animation: fadeIn 0.5s ease-out forwards;
+            margin-top: 25px; padding: 20px; background: linear-gradient(180deg, rgba(16,185,129,0.1) 0%, rgba(16,185,129,0.0) 100%); border:1px solid rgba(16,185,129,0.3); border-radius:12px; text-align:center; display:none; animation: fadeIn 0.5s ease-out forwards;
         }
 
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-        .result-panel h2 {
-            color: #10b981;
-            text-transform: uppercase;
-            margin-bottom: 5px;
-        }
+        .result-panel h2 { color:#10b981; text-transform:uppercase; margin-bottom:5px; }
+        .result-panel .team-name { font-size:2.2rem; font-weight:800; color:#fff; }
+        .result-panel .league-name { font-size:1rem; color:#a7f3d0; margin-top:5px; }
+        .result-panel .player-name { font-size:0.9rem; color:#94a3b8; margin-top:10px; }
 
-        .result-panel .team-name {
-            font-size: 2.2rem;
-            font-weight: 800;
-            color: #fff;
-        }
+        .spin-indicator { text-align:center; color:var(--accent-color); font-weight:600; margin-bottom:15px; height:20px; animation: pulse 1.5s infinite; }
+        .spin-indicator.hidden { display:none; }
 
-        .result-panel .league-name {
-            font-size: 1rem;
-            color: #a7f3d0;
-            margin-top: 5px;
-        }
-
-        .result-panel .player-name {
-            font-size: 0.9rem;
-            color: #94a3b8;
-            margin-top: 10px;
-        }
-
-        .spin-indicator {
-            text-align: center;
-            color: var(--accent-color);
-            font-weight: 600;
-            margin-bottom: 15px;
-            height: 20px;
-            animation: pulse 1.5s infinite;
-        }
-
-        .spin-indicator.hidden {
-            display: none;
-        }
-
-        .copy-btn {
-            background-color: #334155;
-            color: var(--text-color);
-            border: none;
-            padding: 5px 10px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.8rem;
-            margin-left: 10px;
-        }
-
-        .copy-btn:hover {
-            background-color: #475569;
-        }
+        .copy-btn { background-color:#334155; color:var(--text-color); border:none; padding:5px 10px; border-radius:4px; cursor:pointer; font-size:0.8rem; margin-left:10px; }
+        .copy-btn:hover { background-color:#475569; }
     </style>
 </head>
 <body>
-
     <div class="login-modal" id="loginModal">
         <div class="login-container">
             <h2>🎮 Roleta EA FC 26</h2>
-            <input type="text" id="usernameInput" placeholder="Seu Nome">
-            <input type="text" id="roomInput" placeholder="ID da Sala" value="sala-principal">
+            <input type="text" id="usernameInput" placeholder="Seu Nome" />
+            <input type="text" id="roomInput" placeholder="ID da Sala" value="sala-principal" />
             <button onclick="login()">Entrar</button>
             <div class="status-badge" id="statusBadge">Conectando...</div>
         </div>
@@ -401,7 +150,7 @@
         <p>Multiplayer em Tempo Real 🌐</p>
     </header>
 
-    <div class="container" id="mainContainer" style="display: none;">
+    <div class="container" id="mainContainer" style="display:none;">
         <div class="room-info">
             <div class="room-id">
                 Sala: <strong id="roomDisplay">-</strong>
@@ -427,9 +176,7 @@
             <div class="pool-info" id="poolInfo">96 times no pool</div>
         </div>
 
-        <div class="spin-indicator hidden" id="spinIndicator">
-            ⏳ Alguém está girando a roleta...
-        </div>
+        <div class="spin-indicator hidden" id="spinIndicator">⏳ Alguém está girando a roleta...</div>
 
         <div class="roulette-wrapper">
             <div class="roulette-container" id="rouletteContainer"></div>
@@ -463,6 +210,11 @@
         let currentPool = [];
         let isSpinning = false;
         const ITEM_WIDTH = 190;
+
+        // presence-related globals
+        let playerRef = null;          // ref to rooms/{roomId}/players/{playerId}
+        let connectedRef = null;       // ref to .info/connected
+        let onDisconnectRegistered = false;
 
         function initFirebase() {
             const app = firebase.initializeApp(firebaseConfig);
@@ -504,28 +256,54 @@
             currentUsername = username;
             currentRoomId = roomId;
 
-            // registra jogador
-            db.ref(`rooms/${roomId}/players/${currentPlayerId}`).set({
-                username: username,
-                joinedAt: new Date().getTime()
+            // referência ao nó do jogador (global)
+            playerRef = db.ref(`rooms/${roomId}/players/${currentPlayerId}`);
+
+            // ref para saber se conectado
+            connectedRef = db.ref('.info/connected');
+
+            // registra onDisconnect quando houver conexão e grava dados do jogador
+            connectedRef.on('value', (snap) => {
+                if (snap && snap.val() === true) {
+                    // registra remoção automática ao desconectar (server-side)
+                    if (!onDisconnectRegistered && playerRef) {
+                        try {
+                            playerRef.onDisconnect().remove();
+                        } catch (e) {
+                            // alguns ambientes podem lançar se onDisconnect não disponível, silenciamos
+                            console.warn('onDisconnect não registrado:', e);
+                        }
+                        onDisconnectRegistered = true;
+                    }
+
+                    // grava (ou atualiza) os dados do jogador enquanto conectado
+                    if (playerRef) {
+                        playerRef.set({
+                            username: currentUsername,
+                            joinedAt: firebase.database.ServerValue.TIMESTAMP,
+                            online: true
+                        }).catch(err => {
+                            console.warn('Erro ao setar playerRef:', err);
+                        });
+                    }
+                } else {
+                    // sem conexão; nada a fazer aqui (onDisconnect do servidor garante remoção)
+                }
             });
 
-            // atualiza lista de jogadores em tempo real
+            // listeners em tempo real (players, lastResult, isSpinning)
             db.ref(`rooms/${roomId}/players`).on('value', (snapshot) => {
                 const players = snapshot.val() || {};
                 updatePlayersList(players);
             });
 
-            // ouve resultado final (lastResult) para mostrar painel
             db.ref(`rooms/${roomId}/lastResult`).on('value', (snapshot) => {
                 const result = snapshot.val();
                 if (result) {
-                    // mostra mesmo que seja o próprio (para manter consistência)
                     showResult({ winner: result.winner || result.winner, league: result.league, username: result.username });
                 }
             });
 
-            // ouve indicador simples de isSpinning para bloquear botão / mostrar indicador
             db.ref(`rooms/${roomId}/isSpinning`).on('value', (snapshot) => {
                 const spinning = snapshot.val();
                 if (spinning && spinning.playerId !== currentPlayerId) {
@@ -533,13 +311,11 @@
                     document.getElementById('spinBtn').disabled = true;
                 } else {
                     document.getElementById('spinIndicator').classList.add('hidden');
-                    if (!isSpinning) {
-                        document.getElementById('spinBtn').disabled = false;
-                    }
+                    if (!isSpinning) document.getElementById('spinBtn').disabled = false;
                 }
             });
 
-            // ouve spinData (dados da animação) e reproduz para observadores
+            // spinData listener para reproduzir animação em observadores
             setupSpinListener();
 
             document.getElementById('loginModal').classList.add('hidden');
@@ -599,7 +375,7 @@
         function updatePlayersList(players) {
             const listContainer = document.getElementById('playersList');
             listContainer.innerHTML = '';
-            
+
             const playerArray = Object.entries(players).map(([id, data]) => ({ id, ...data }));
             document.getElementById('playersCount').textContent = `${playerArray.length} Jogador${playerArray.length !== 1 ? 'es' : ''}`;
 
@@ -618,12 +394,10 @@
             document.getElementById('resultPlayer').textContent = `🎯 ${result.username} sorteou`;
             document.getElementById('resultPanel').style.display = 'block';
 
-            if (!isSpinning) {
-                document.getElementById('spinBtn').disabled = false;
-            }
+            if (!isSpinning) document.getElementById('spinBtn').disabled = false;
         }
 
-        // Função spin atualizada: grava spinData no DB para que outros clientes reproduzam
+        // spin com gravação de spinData (mantido)
         function spin() {
             if (isSpinning) return;
 
@@ -639,7 +413,7 @@
             spinBtn.disabled = true;
             document.getElementById('resultPanel').style.display = 'none';
 
-            // marca que está girando (simples)
+            // marca isSpinning (simples)
             db.ref(`rooms/${currentRoomId}/isSpinning`).set({
                 playerId: currentPlayerId,
                 username: currentUsername,
@@ -652,15 +426,13 @@
 
             // cria array estendido (ordem que vamos exibir)
             let extendedItems = [];
-            for (let i = 0; i < 4; i++) {
-                extendedItems = extendedItems.concat(shuffle([...pool]));
-            }
+            for (let i = 0; i < 4; i++) extendedItems = extendedItems.concat(shuffle([...pool]));
 
-            // força que um item específico seja o vencedor em certa posição
+            // força posição do vencedor
             const targetPositionIndex = Math.min(60, extendedItems.length - 10);
             extendedItems[targetPositionIndex] = winner;
 
-            // prepara spinData compacto (serializável)
+            // spinData serializável
             const spinData = {
                 items: extendedItems.map(it => ({ name: it.name, league: it.league })),
                 targetIndex: targetPositionIndex,
@@ -670,10 +442,10 @@
                 username: currentUsername
             };
 
-            // grava spinData para que todos reproduzam
+            // grava spinData para sincronizar animação
             db.ref(`rooms/${currentRoomId}/spinData`).set(spinData);
 
-            // monta e anima localmente (mesma lógica)
+            // monta e anima localmente
             const container = document.getElementById('rouletteContainer');
             container.style.transition = 'none';
             container.style.transform = 'translateX(0px)';
@@ -692,10 +464,10 @@
             const centerOffset = (wrapperWidth / 2) - (ITEM_WIDTH / 2) - 5;
             const targetX = -(spinData.targetIndex * ITEM_WIDTH) + centerOffset;
 
-            container.style.transition = `transform ${spinData.duration}ms cubic-bezier(0.15, 0.85, 0.35, 1)`;
+            container.style.transition = `transform ${spinData.duration}ms cubic-bezier(0.15,0.85,0.35,1)`;
             container.style.transform = `translateX(${targetX}px)`;
 
-            // ao fim, grava lastResult e limpa isSpinning e spinData
+            // fim do giro: grava lastResult, limpa isSpinning e spinData
             setTimeout(() => {
                 db.ref(`rooms/${currentRoomId}/lastResult`).set({
                     winner: winner.name,
@@ -716,26 +488,21 @@
 
         function copyRoomLink() {
             const link = `${window.location.origin}?room=${currentRoomId}`;
-            navigator.clipboard.writeText(link).then(() => {
-                alert('Link copiado! 📋');
-            });
+            navigator.clipboard.writeText(link).then(() => alert('Link copiado! 📋'));
         }
 
         // Listener que reproduz animação quando spinData é criada por outro jogador
         function setupSpinListener() {
+            if (!currentRoomId) return;
             db.ref(`rooms/${currentRoomId}/spinData`).on('value', (snapshot) => {
                 const data = snapshot.val();
-                if (!data) return; // nada a reproduzir / já terminou
-
-                // se o próprio cliente foi quem iniciou, não precisa reproduzir (já está animando localmente)
+                if (!data) return;
                 if (data.playerId === currentPlayerId) return;
-
                 playSpinFromData(data);
             });
         }
 
         function playSpinFromData(data) {
-            // monta os itens igual ao cliente que iniciou
             const container = document.getElementById('rouletteContainer');
             container.style.transition = 'none';
             container.style.transform = 'translateX(0px)';
@@ -748,7 +515,7 @@
                 container.appendChild(div);
             });
 
-            container.offsetHeight; // forçar reflow
+            container.offsetHeight;
 
             const wrapperWidth = document.querySelector('.roulette-wrapper').offsetWidth;
             const centerOffset = (wrapperWidth / 2) - (ITEM_WIDTH / 2) - 5;
@@ -760,51 +527,100 @@
             const remaining = Math.max(0, duration - elapsed);
 
             if (remaining <= 0) {
-                // já terminou no servidor; posiciona direto
                 container.style.transition = 'none';
                 container.style.transform = `translateX(${targetX}px)`;
                 return;
             }
 
-            // inicia a animação com o tempo restante (fast-forward para clientes atrasados)
-            // duas requestAnimationFrame para garantir que a transição seja aplicada corretamente
+            // inicia animação com tempo restante
             requestAnimationFrame(() => {
                 requestAnimationFrame(() => {
-                    container.style.transition = `transform ${remaining}ms cubic-bezier(0.15, 0.85, 0.35, 1)`;
+                    container.style.transition = `transform ${remaining}ms cubic-bezier(0.15,0.85,0.35,1)`;
                     container.style.transform = `translateX(${targetX}px)`;
                 });
             });
 
-            // Mostra indicador de spinning enquanto a animação acontece
             document.getElementById('spinIndicator').classList.remove('hidden');
             document.getElementById('spinBtn').disabled = true;
 
             setTimeout(() => {
-                // quando acabar a animação, esperamos o lastResult chegar do servidor para mostrar resultado
                 document.getElementById('spinIndicator').classList.add('hidden');
-                if (!isSpinning) {
-                    document.getElementById('spinBtn').disabled = false;
-                }
+                if (!isSpinning) document.getElementById('spinBtn').disabled = false;
             }, remaining + 50);
         }
 
-        // escuta eventos UI
+        // Remove imediatamente (tentativa antes do onDisconnect do servidor)
+        function leaveRoomImmediately() {
+            try {
+                if (playerRef) {
+                    // tenta remover imediatamente (nem sempre conclui em todos os navegadores)
+                    playerRef.remove().catch(() => {});
+                }
+            } catch (e) {
+                console.warn('Erro ao tentar sair imediatamente:', e);
+            }
+        }
+
+        // Cleanup completo ao trocar de sala / logout
+        function leaveRoomCleanup() {
+            // remove listeners do room atual
+            if (currentRoomId) {
+                try {
+                    db.ref(`rooms/${currentRoomId}/players`).off();
+                    db.ref(`rooms/${currentRoomId}/lastResult`).off();
+                    db.ref(`rooms/${currentRoomId}/isSpinning`).off();
+                    db.ref(`rooms/${currentRoomId}/spinData`).off();
+                } catch (e) { /* ignore */ }
+            }
+
+            // desconecta o connectedRef
+            if (connectedRef) {
+                try { connectedRef.off(); } catch (e) {}
+                connectedRef = null;
+            }
+
+            // cancela onDisconnect e remove o nó se possível
+            if (playerRef) {
+                try {
+                    playerRef.onDisconnect().cancel().catch(() => {});
+                    playerRef.remove().catch(() => {});
+                } catch (e) {
+                    // onDisconnect ou remove podem falhar dependendo do estado de rede
+                }
+                playerRef = null;
+            }
+
+            currentRoomId = '';
+            currentUsername = '';
+            isSpinning = false;
+
+            // volta UI ao estado de login (opcional)
+            document.getElementById('mainContainer').style.display = 'none';
+            document.getElementById('loginModal').classList.remove('hidden');
+            document.getElementById('statusBadge').textContent = 'Conectando...';
+        }
+
+        // tenta limpar ao fechar/recargar a aba
+        window.addEventListener('beforeunload', () => {
+            leaveRoomImmediately();
+            // não chamamos leaveRoomCleanup aqui (pode demorar); onDisconnect do servidor cuidará da remoção
+        });
+
+        // pagehide para Firefox / iOS
+        window.addEventListener('pagehide', () => {
+            leaveRoomImmediately();
+        });
+
+        // UI bindings
         document.getElementById('spinBtn').addEventListener('click', spin);
         document.getElementById('leagueSelect').addEventListener('change', updatePoolInfo);
 
-        document.getElementById('usernameInput').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') login();
-        });
-
-        document.getElementById('roomInput').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') login();
-        });
+        document.getElementById('usernameInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') login(); });
+        document.getElementById('roomInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') login(); });
 
         const urlParams = new URLSearchParams(window.location.search);
         const roomFromURL = urlParams.get('room');
-        if (roomFromURL) {
-            document.getElementById('roomInput').value = roomFromURL;
-        }
+        if (roomFromURL) document.getElementById('roomInput').value = roomFromURL;
 
         initFirebase();
     </script>
