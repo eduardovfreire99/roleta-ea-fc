@@ -62,7 +62,7 @@
 
       <!-- join area revealed only when user clicks Entrar -->
       <div id="joinBox" class="modal-row hidden" style="margin-top:4px">
-        <input id="joinCodeInput" class="input" placeholder="Código da sala (apenas números)" />
+        <input id="joinCodeInput" class="input" placeholder="Código da sala (6 dígitos)" />
         <button id="confirmJoinBtn" class="btn enter">Confirmar</button>
         <div id="joinError" class="error hidden"></div>
       </div>
@@ -90,6 +90,7 @@
 
       <div class="controls">
         <label class="small muted">Filtrar liga</label>
+        <!-- leagueSelect será habilitado apenas para host (e sincronizado via DB settings) -->
         <select id="leagueSelect" class="input">
           <option value="all">Todas as Ligas (96)</option>
           <option value="premier">Premier League</option>
@@ -119,7 +120,7 @@
   </div>
 
   <script>
-    // Firebase config (mantive o seu)
+    // Firebase config
     const firebaseConfig = {
       apiKey: "AIzaSyCjfxIJyKBsg9U_GJu4JP2Taq6fMXiGpMA",
       authDomain: "roleta-ea-fc-cc40c.firebaseapp.com",
@@ -135,7 +136,7 @@
     const KEY_NAME = 'roleta_username';
     const KEY_ROOM = 'roleta_room_id';
 
-    // identity persisted
+    // persisted identity
     let currentPlayerId = localStorage.getItem(KEY_PLAYER);
     if (!currentPlayerId) {
       currentPlayerId = Math.random().toString(36).substr(2,9);
@@ -156,6 +157,7 @@
     let roomHostId = null;
     let isHost = false;
     let hostOnDisconnectRegistered = false;
+    let settingsRef = null; // <-- reference to rooms/{roomId}/settings
     const GRACE_MS = 15000;
 
     // DOM
@@ -193,7 +195,7 @@
     }
     initFirebase();
 
-    // teams database (unchanged)
+    // teams DB
     const teamsDB = {
       premier: { name: "Premier League", teams: ["Arsenal","Aston Villa","Bournemouth","Brentford","Brighton","Chelsea","Crystal Palace","Everton","Fulham","Ipswich Town","Leicester City","Liverpool","Manchester City","Manchester United","Newcastle United","Nottingham Forest","Southampton","Tottenham Hotspur","West Ham","Wolverhampton"] },
       bundesliga: { name: "Bundesliga", teams: ["Bayer Leverkusen","Bayern de Munique","Borussia Dortmund","Borussia Mönchengladbach","Eintracht Frankfurt","FC Augsburg","FC Heidenheim","FC St. Pauli","Holstein Kiel","Mainz 05","RB Leipzig","SC Freiburg","SV Werder Bremen","TSG Hoffenheim","Union Berlin","VfB Stuttgart","VfL Bochum","VfL Wolfsburg"] },
@@ -233,7 +235,7 @@
       });
     }
 
-    // unique numeric room generator (6 digits) with collision check
+    // unique numeric room generator (6 digits)
     async function generateUniqueRoomCode(attempts = 6) {
       for (let i = 0; i < attempts; i++) {
         const code = Math.floor(Math.random() * 1000000).toString().padStart(6, '0'); // "000000" - "999999"
@@ -243,7 +245,7 @@
       throw new Error('Não foi possível gerar código único. Tente novamente.');
     }
 
-    // create room flow
+    // CREATE ROOM
     createBtn.addEventListener('click', async () => {
       const name = usernameInput.value.trim();
       if (!name) { alert('Digite seu nome antes de criar a sala.'); return; }
@@ -256,9 +258,11 @@
         const hostNode = db.ref(`rooms/${code}/host`);
         const hostObj = { playerId: currentPlayerId, username: currentUsername, online: true, createdAt: firebase.database.ServerValue.TIMESTAMP };
         await hostNode.set(hostObj);
-        try { hostNode.onDisconnect().update({ online:false, lastSeen: firebase.database.ServerValue.TIMESTAMP }); hostOnDisconnectRegistered = true; } catch(e){ /* ignore */ }
+        try { hostNode.onDisconnect().update({ online:false, lastSeen: firebase.database.ServerValue.TIMESTAMP }); hostOnDisconnectRegistered = true; } catch(e){}
 
-        // store room and join
+        // initialize settings (host-only writable). default league='all'
+        await db.ref(`rooms/${code}/settings`).set({ league: 'all' });
+
         localStorage.setItem(KEY_ROOM, code);
         await enterRoom(code, true);
       } catch (err) {
@@ -268,16 +272,14 @@
       }
     });
 
-    // show join input only when user clicks 'Entrar'
+    // SHOW JOIN BOX
     showJoinBtn.addEventListener('click', () => {
       joinError.classList.add('hidden');
       joinBox.classList.toggle('hidden');
-      if (!joinBox.classList.contains('hidden')) {
-        joinCodeInput.focus();
-      }
+      if (!joinBox.classList.contains('hidden')) joinCodeInput.focus();
     });
 
-    // confirm join: validate existence and host online
+    // CONFIRM JOIN
     confirmJoinBtn.addEventListener('click', async () => {
       const code = (joinCodeInput.value || '').trim();
       if (!/^\d{6}$/.test(code)) {
@@ -298,7 +300,6 @@
           showJoinError('Sala sem host disponível. Tente novamente mais tarde.');
           return;
         }
-        // ok: join
         localStorage.setItem(KEY_ROOM, code);
         currentUsername = usernameInput.value.trim();
         if (!currentUsername) { showJoinError('Digite seu nome para entrar.'); return; }
@@ -315,22 +316,21 @@
       joinError.classList.remove('hidden');
     }
 
-    // Enter room: common join routine (create and join call this)
+    // ENTER ROOM (join or after create)
     async function enterRoom(code, createdAsHost = false) {
-      // hide login UI
       document.getElementById('loginArea').style.display = 'none';
       roomArea.classList.remove('hidden');
       roomDisplay.textContent = code;
       currentRoomId = code;
 
-      // presence: player node
+      // presence
       playerRef = db.ref(`rooms/${code}/players/${currentPlayerId}`);
       connectedRef = db.ref('.info/connected');
 
       connectedRef.on('value', snap => {
         if (snap && snap.val() === true) {
           if (!onDisconnectRegistered && playerRef) {
-            try { playerRef.onDisconnect().update({ online:false, lastSeen: firebase.database.ServerValue.TIMESTAMP }); } catch(e){ }
+            try { playerRef.onDisconnect().update({ online:false, lastSeen: firebase.database.ServerValue.TIMESTAMP }); } catch(e){}
             onDisconnectRegistered = true;
           }
           if (playerRef) {
@@ -357,23 +357,32 @@
           } catch(e){}
         }
 
-        // attempt election if needed (randomized small delay to reduce collisions)
         setTimeout(() => electHostIfNeeded(), Math.floor(Math.random()*400));
       });
 
-      // list players
+      // settings reference & listener (new)
+      settingsRef = db.ref(`rooms/${code}/settings`);
+      settingsRef.on('value', snap => {
+        const s = snap.val() || { league: 'all' };
+        // update select to server value
+        leagueSelect.value = s.league || 'all';
+        // ensure UI uses server settings
+        updatePoolInfo();
+        // enable select only for host
+        leagueSelect.disabled = !isHost;
+      });
+
+      // players and other listeners
       db.ref(`rooms/${code}/players`).on('value', snap => {
         const players = snap.val() || {};
         renderPlayers(players);
       });
 
-      // listen lastResult
       db.ref(`rooms/${code}/lastResult`).on('value', snap => {
         const r = snap.val();
         if (r) showResult(r);
       });
 
-      // isSpinning indicator
       db.ref(`rooms/${code}/isSpinning`).on('value', snap => {
         const s = snap.val();
         if (s && s.playerId !== currentPlayerId) {
@@ -385,22 +394,16 @@
         }
       });
 
-      // spinData listener for animation
       setupSpinListener();
-
-      // UI setup
       updatePoolInfo();
-      createBtn.disabled = false;
 
-      // copy/share handlers
+      // handlers for share/copy/leave
       copyRoomBtn.onclick = () => { navigator.clipboard.writeText(code).then(()=>alert('Código copiado!')); };
       shareBtn.onclick = () => {
         const link = `${window.location.origin}${window.location.pathname}?room=${code}`;
         if (navigator.share) navigator.share({ title: 'Roleta: entre na sala', url: link }).catch(()=>navigator.clipboard.writeText(link).then(()=>alert('Link copiado!')));
         else navigator.clipboard.writeText(link).then(()=>alert('Link copiado!'));
       };
-
-      // leave handler
       leaveBtn.onclick = leaveRoomCleanup;
     }
 
@@ -423,7 +426,7 @@
       });
     }
 
-    // election logic: if host missing/offline beyond GRACE_MS, elect oldest player
+    // election logic
     async function electHostIfNeeded(){
       if (!currentRoomId) return;
       try {
@@ -450,7 +453,7 @@
         await hostRefLocal.transaction(current => {
           if (current === null) return candidate;
           if (current && current.online === false && current.lastSeen && (Date.now() - current.lastSeen) >= GRACE_MS) return candidate;
-          return; // abort
+          return;
         }, (err, committed, snap) => {
           if (err) console.warn('host tx err', err);
           if (committed) {
@@ -463,7 +466,7 @@
       } catch(e) { console.warn('elect error', e); }
     }
 
-    // spin + sync (same approach as earlier)
+    // SPIN logic
     async function doSpin() {
       if (isSpinning) return;
       const pool = getActivePool();
@@ -485,7 +488,6 @@
       const spinData = { items: extended.map(it=>({name:it.name,league:it.league})), targetIndex, duration:5000, startTime: Date.now(), playerId: currentPlayerId, username: currentUsername };
       await db.ref(`rooms/${currentRoomId}/spinData`).set(spinData);
 
-      // animate locally
       renderSpinItems(spinData.items);
       animateToIndex(spinData.targetIndex, spinData.duration);
 
@@ -509,7 +511,6 @@
         d.innerHTML = `<div>${it.name}</div><div style="font-size:0.7rem;color:#94a3b8;margin-top:4px">${it.league}</div>`;
         rouletteContainer.appendChild(d);
       });
-      // force reflow
       void rouletteContainer.offsetHeight;
     }
     function animateToIndex(index, duration){
@@ -526,13 +527,11 @@
         const d = snap.val();
         if (!d) return;
         if (d.playerId === currentPlayerId) return;
-        // build items and animate with fast-forward if needed
         renderSpinItems(d.items);
         const now = Date.now();
         const elapsed = Math.max(0, now - d.startTime);
         const remaining = Math.max(0, (d.duration || 5000) - elapsed);
         if (remaining <= 0) {
-          // position final
           const wrapperWidth = document.querySelector('.roulette-wrapper').offsetWidth;
           const centerOffset = (wrapperWidth/2) - (ITEM_WIDTH/2) - 5;
           const targetX = -(d.targetIndex * ITEM_WIDTH) + centerOffset;
@@ -540,7 +539,13 @@
           rouletteContainer.style.transform = `translateX(${targetX}px)`;
           return;
         }
-        requestAnimationFrame(()=>requestAnimationFrame(()=> { rouletteContainer.style.transition = `transform ${remaining}ms cubic-bezier(0.15,0.85,0.35,1)`; const wrapperWidth = document.querySelector('.roulette-wrapper').offsetWidth; const centerOffset = (wrapperWidth/2) - (ITEM_WIDTH/2) - 5; const targetX = -(d.targetIndex * ITEM_WIDTH) + centerOffset; rouletteContainer.style.transform = `translateX(${targetX}px)`; }));
+        requestAnimationFrame(()=>requestAnimationFrame(()=> {
+          rouletteContainer.style.transition = `transform ${remaining}ms cubic-bezier(0.15,0.85,0.35,1)`;
+          const wrapperWidth = document.querySelector('.roulette-wrapper').offsetWidth;
+          const centerOffset = (wrapperWidth/2) - (ITEM_WIDTH/2) - 5;
+          const targetX = -(d.targetIndex * ITEM_WIDTH) + centerOffset;
+          rouletteContainer.style.transform = `translateX(${targetX}px)`;
+        }));
         spinIndicator.classList.remove('hidden');
         spinBtn.disabled = true;
         setTimeout(()=>{ spinIndicator.classList.add('hidden'); if (!isSpinning) spinBtn.disabled = false; }, remaining + 50);
@@ -556,6 +561,29 @@
       if (!isSpinning) spinBtn.disabled = false;
     }
 
+    // LEAGUE SELECT: host-only writes to DB settings; everyone listens and applies
+    leagueSelect.addEventListener('change', () => {
+      if (!currentRoomId) return;
+      // Only host can write settings
+      if (isHost) {
+        // write new setting to DB
+        db.ref(`rooms/${currentRoomId}/settings`).set({ league: leagueSelect.value }).catch(err => {
+          console.warn('Erro ao atualizar settings:', err);
+        });
+      } else {
+        // revert to server value (defensive)
+        if (settingsRef) {
+          settingsRef.get().then(snap => {
+            const s = snap.val() || { league: 'all' };
+            leagueSelect.value = s.league || 'all';
+          }).catch(()=>{ leagueSelect.value = 'all'; });
+        } else {
+          leagueSelect.value = 'all';
+        }
+      }
+      updatePoolInfo();
+    });
+
     // leave voluntarily
     async function leaveRoomCleanup(){
       if (!currentRoomId) return;
@@ -564,6 +592,7 @@
         db.ref(`rooms/${currentRoomId}/lastResult`).off();
         db.ref(`rooms/${currentRoomId}/isSpinning`).off();
         db.ref(`rooms/${currentRoomId}/spinData`).off();
+        if (settingsRef) settingsRef.off();
       } catch(e){}
       if (connectedRef) { try { connectedRef.off(); } catch(e){} connectedRef = null; }
       if (playerRef) {
@@ -584,58 +613,27 @@
     // bindings
     spinBtn.addEventListener('click', doSpin);
     leagueSelect.addEventListener('change', updatePoolInfo);
-
-    // allow pressing Enter in joinCodeInput
     joinCodeInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') confirmJoinBtn.click(); });
 
-    // auto-fill stored name
+    // auto-fill stored name and optionally room
     const storedName = localStorage.getItem(KEY_NAME);
     if (storedName) usernameInput.value = storedName;
 
-    // If page opened with ?room=XXXX, prefill join code and show join box (but still require name and Confirm)
     const urlParams = new URLSearchParams(window.location.search);
     const roomParam = urlParams.get('room');
     if (roomParam && /^\d{6}$/.test(roomParam)) {
       joinBox.classList.remove('hidden');
       joinCodeInput.value = roomParam;
-      joinCodeInput.disabled = false; // still allow editing if needed
+      joinCodeInput.disabled = false;
     }
 
-    // copy link helper: if user wants to copy from main UI before joining, will be available after join
-    copyRoomBtn.addEventListener('click', () => {
-      if (!currentRoomId) return;
-      navigator.clipboard.writeText(currentRoomId).then(()=> alert('Código copiado!'));
-    });
-
-    // some helpful UI: if user closes tab quickly, mark offline (best-effort)
+    // best-effort mark offline on unload
     window.addEventListener('beforeunload', () => {
       try { if (playerRef) playerRef.update({ online:false, lastSeen: firebase.database.ServerValue.TIMESTAMP }); } catch(e){}
     });
 
-    // initial static roulette (in case user creates immediately)
-    updatePoolInfo();
-
-    // optional: auto-join if stored room + username (you can disable if undesired)
-    (function tryAutoJoinStored() {
-      const storedRoom = localStorage.getItem(KEY_ROOM);
-      const storedName = localStorage.getItem(KEY_NAME);
-      if (storedRoom && storedName) {
-        // prefill name
-        usernameInput.value = storedName;
-        // attempt join: validate room+host quickly; if invalid, don't auto-join
-        db.ref(`rooms/${storedRoom}/host`).get().then(snap => {
-          const v = snap.val();
-          if (v && v.online === true) {
-            // auto-enter silently
-            currentUsername = storedName;
-            enterRoom(storedRoom, false);
-          } else {
-            // don't auto-join — leave storedRoom to enable convenient re-join
-          }
-        }).catch(()=>{});
-      }
-    })();
-
+    // expose create/join controls to global (optional) for debugging
+    window.__roleta = { db, generateUniqueRoomCode };
   </script>
 </body>
 </html>
