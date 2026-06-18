@@ -130,7 +130,16 @@
     let db;
     let currentUsername = '';
     let currentRoomId = '';
-    let currentPlayerId = Math.random().toString(36).substr(2,9);
+    const STORED_PLAYER_KEY = 'roleta_player_id';
+    const STORED_USERNAME_KEY = 'roleta_username';
+    let currentPlayerId = localStorage.getItem(STORED_PLAYER_KEY);
+    if (!currentPlayerId) {
+      currentPlayerId = Math.random().toString(36).substr(2,9);
+      localStorage.setItem(STORED_PLAYER_KEY, currentPlayerId);
+    }
+    // if there is a stored username, prefill input later
+    const storedUsername = localStorage.getItem(STORED_USERNAME_KEY) || '';
+
     let currentPool = [];
     let isSpinning = false;
     const ITEM_WIDTH = 190;
@@ -143,6 +152,8 @@
     let isHost = false;
     let hostRef = null;
     let hostOnDisconnectRegistered = false;
+
+    const GRACE_MS = 15000; // tempo de graça para reconexão do host (15s)
 
     function initFirebase(){
       const app = firebase.initializeApp(firebaseConfig);
@@ -165,25 +176,38 @@
     const shareBtn = document.getElementById('shareBtn');
     const copyRoomBtn = document.getElementById('copyRoomBtn');
 
-    // create room: generate id and mark host
+    // prefill username input if stored
+    if (storedUsername) {
+      document.getElementById('usernameInput').value = storedUsername;
+    }
+
+    // create room: generate id and mark host (online:true)
     function createRoom(){
       const username = document.getElementById('usernameInput').value.trim();
       if (!username){ alert('Digite seu nome antes de criar a sala.'); return; }
+      localStorage.setItem(STORED_USERNAME_KEY, username);
       const id = 'sala-' + Math.random().toString(36).substr(2,8);
       const hostNode = db.ref(`rooms/${id}/host`);
-      hostNode.set({
-        playerId: currentPlayerId,
-        username: username
-      }).then(() => {
-        try{ hostNode.onDisconnect().remove(); hostOnDisconnectRegistered = true; } catch(e){ console.warn('onDisconnect host failed', e); }
+      const hostObj = { playerId: currentPlayerId, username: username, online: true };
+      hostNode.set(hostObj).then(() => {
+        try {
+          // onDisconnect marca host offline (em vez de remover)
+          hostNode.onDisconnect().update({ online: false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
+          hostOnDisconnectRegistered = true;
+        } catch(e) { console.warn('onDisconnect host failed', e); }
         joinRoom(id, true);
-      }).catch(err => { console.error('Erro ao criar sala', err); alert('Erro ao criar sala. Veja o console.'); });
+      }).catch(err => {
+        console.error('Erro ao criar sala', err);
+        alert('Erro ao criar sala. Veja o console.');
+      });
     }
 
     // join room (called for create and normal join)
     async function joinRoom(roomId, asHost=false){
       const username = document.getElementById('usernameInput').value.trim();
       if (!username){ alert('Digite seu nome para entrar na sala.'); return; }
+      // store username persistently
+      localStorage.setItem(STORED_USERNAME_KEY, username);
       currentUsername = username;
       currentRoomId = roomId;
 
@@ -193,14 +217,16 @@
       roomDisplay.textContent = roomId;
       document.getElementById('statusBadge').textContent = 'Conectado ✅';
 
-      // player ref & presence
+      // player ref & presence (mark online true, onDisconnect set offline + lastSeen)
       playerRef = db.ref(`rooms/${roomId}/players/${currentPlayerId}`);
       connectedRef = db.ref('.info/connected');
 
       connectedRef.on('value', snap => {
         if (snap && snap.val() === true){
           if (!onDisconnectRegistered && playerRef){
-            try{ playerRef.onDisconnect().remove(); } catch(e){ console.warn('onDisconnect player failed', e); }
+            try {
+              playerRef.onDisconnect().update({ online: false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
+            } catch(e) { console.warn('onDisconnect player failed', e); }
             onDisconnectRegistered = true;
           }
           if (playerRef) {
@@ -209,7 +235,7 @@
         }
       });
 
-      // hostRef listener: update local state and trigger election if host is null
+      // hostRef listener: update local state and trigger election if needed
       hostRef = db.ref(`rooms/${roomId}/host`);
       hostRef.on('value', snap => {
         const v = snap.val();
@@ -217,18 +243,21 @@
         isHost = roomHostId === currentPlayerId;
         shareLinkContainer.style.display = isHost ? 'flex' : 'none';
 
-        // if no host present, try to elect one (small randomized delay to reduce collisions)
-        if (!v) {
-          // wait small random ms to reduce simultaneous election attempts
-          setTimeout(() => {
-            electHost();
-          }, Math.floor(Math.random() * 400));
-        } else {
-          // if I became host but haven't registered onDisconnect, register it
-          if (isHost && !hostOnDisconnectRegistered) {
-            try { hostRef.onDisconnect().remove(); hostOnDisconnectRegistered = true; } catch(e) { console.warn('onDisconnect host failed', e); }
-          }
+        // if I am the host (reconnected with same id), ensure host is online:true and onDisconnect is active
+        if (isHost) {
+          try {
+            hostRef.update({ online: true, username: currentUsername }).catch(()=>{});
+            if (!hostOnDisconnectRegistered) {
+              hostRef.onDisconnect().update({ online: false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
+              hostOnDisconnectRegistered = true;
+            }
+          } catch(e) { console.warn('host onDisconnect register failed', e); }
         }
+
+        // if no host present OR host offline beyond grace, attempt election (randomized small delay)
+        setTimeout(() => {
+          electHostIfNeeded();
+        }, Math.floor(Math.random() * 400));
       });
 
       // listeners
@@ -258,16 +287,29 @@
       updatePoolInfo();
     }
 
-    // elect a host if /host is empty. Uses transaction to be safe in concurrent scenarios.
-    async function electHost(){
+    // Try to elect host only if needed (host missing or offline beyond grace)
+    async function electHostIfNeeded(){
       if (!currentRoomId) return;
       try {
+        const hostSnap = await db.ref(`rooms/${currentRoomId}/host`).get();
+        const hostVal = hostSnap.val();
+        const now = Date.now();
+
+        // if host exists and online, nothing to do
+        if (hostVal && hostVal.online === true) return;
+
+        // if host exists but offline and lastSeen recent, wait
+        if (hostVal && hostVal.online === false && hostVal.lastSeen) {
+          const lastSeen = hostVal.lastSeen;
+          if ((now - lastSeen) < GRACE_MS) return;
+        }
+
+        // choose candidate among players (oldest joined)
         const playersSnap = await db.ref(`rooms/${currentRoomId}/players`).get();
         const players = playersSnap.val() || {};
         const entries = Object.entries(players);
-        if (entries.length === 0) return; // nothing to elect
+        if (entries.length === 0) return;
 
-        // pick candidate: prefer smallest joinedAt timestamp, fallback to lexicographic id
         let candidateId = null;
         let candidateData = null;
         let minJoined = Infinity;
@@ -279,36 +321,31 @@
             candidateData = data;
           }
         }
-        if (!candidateId) {
-          // fallback: first id
-          candidateId = entries[0][0];
-          candidateData = entries[0][1];
-        }
-        const candidate = { playerId: candidateId, username: candidateData.username || 'Jogador' };
+        if (!candidateId) { candidateId = entries[0][0]; candidateData = entries[0][1]; }
+        const candidate = { playerId: candidateId, username: candidateData.username || 'Jogador', online: true };
 
-        // attempt to set host only if current value is null
-        await hostRef.transaction(current => {
-          if (current === null) {
+        const hostRefLocal = db.ref(`rooms/${currentRoomId}/host`);
+        await hostRefLocal.transaction(current => {
+          // install host only if no host OR host is offline and lastSeen older than GRACE_MS
+          if (current === null) return candidate;
+          if (current && current.online === false && current.lastSeen && (Date.now() - current.lastSeen) >= GRACE_MS) {
             return candidate;
           }
-          return; // abort transaction (someone else set host)
+          return; // abort
         }, (error, committed, snapshot) => {
           if (error) {
             console.warn('Host transaction failed:', error);
             return;
           }
           if (committed) {
-            // we won the election (or the transaction set our candidate)
-            // set createdAt and register onDisconnect (only the client that committed should do this)
-            try {
-              hostRef.update({ createdAt: firebase.database.ServerValue.TIMESTAMP }).catch(()=>{});
-              // If we (this client) are the new host, register onDisconnect
-              const newHost = snapshot.val();
-              if (newHost && newHost.playerId === currentPlayerId) {
-                try { hostRef.onDisconnect().remove(); hostOnDisconnectRegistered = true; } catch(e){ console.warn('host onDisconnect register failed', e); }
-              }
-            } catch (e) {
-              console.warn('Erro pós-transaction host:', e);
+            // if I became host, register onDisconnect for host online:false
+            const newHost = snapshot.val();
+            if (newHost && newHost.playerId === currentPlayerId) {
+              try {
+                hostRefLocal.update({ createdAt: firebase.database.ServerValue.TIMESTAMP }).catch(()=>{});
+                hostRefLocal.onDisconnect().update({ online: false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
+                hostOnDisconnectRegistered = true;
+              } catch(e) { console.warn('host onDisconnect register failed', e); }
             }
           }
         });
@@ -317,6 +354,7 @@
       }
     }
 
+    // pool / UI
     function getActivePool(){
       const selected = document.getElementById('leagueSelect').value;
       let pool = [];
@@ -327,7 +365,6 @@
       }
       return pool;
     }
-
     function updatePoolInfo(){ currentPool = getActivePool(); document.getElementById('poolInfo').textContent = `${currentPool.length} times disponíveis`; setupStaticRoulette(); }
     function setupStaticRoulette(){ const container = document.getElementById('rouletteContainer'); container.style.transition='none'; container.style.transform='translateX(0px)'; container.innerHTML=''; const pool=getActivePool(); const displayPool = pool.length>5?pool.slice(0,10):[...pool,...pool,...pool]; displayPool.forEach(item=>{ const d=document.createElement('div'); d.className='roulette-item'; d.innerHTML=`<div>${item.name}</div><div class="league-tag">${item.league}</div>`; container.appendChild(d); }); }
     function shuffle(array){ return array.sort(()=>Math.random()-0.5); }
@@ -341,7 +378,8 @@
         const badge = document.createElement('div');
         badge.className = 'player-badge' + (player.id === currentPlayerId ? ' current' : '');
         const nameSpan = document.createElement('span');
-        nameSpan.textContent = player.username + (player.id === currentPlayerId ? ' (Você)' : '');
+        const onlineMark = player.online === false ? ' (offline)' : '';
+        nameSpan.textContent = player.username + (player.id === currentPlayerId ? ' (Você)' : '') + onlineMark;
         badge.appendChild(nameSpan);
         if (player.id === roomHostId){
           const hb = document.createElement('span');
@@ -362,7 +400,7 @@
       if (!isSpinning) document.getElementById('spinBtn').disabled = false;
     }
 
-    // spin implementation with spinData (same as before)
+    // spin implementation with spinData
     function spin(){
       if (isSpinning) return;
       const spinBtn = document.getElementById('spinBtn');
@@ -423,22 +461,17 @@
       setTimeout(()=>{ document.getElementById('spinIndicator').classList.add('hidden'); if (!isSpinning) document.getElementById('spinBtn').disabled = false; }, remaining+50);
     }
 
-    // presence: try immediate remove
-    function leaveRoomImmediately(){
-      try{ if (playerRef) playerRef.remove().catch(()=>{}); } catch(e){ console.warn(e); }
-    }
-
-    // cleanup when leaving / logout
+    // cleanup when leaving voluntarily (logout/leave room)
     function leaveRoomCleanup(){
       if (currentRoomId){
         try{ db.ref(`rooms/${currentRoomId}/players`).off(); db.ref(`rooms/${currentRoomId}/lastResult`).off(); db.ref(`rooms/${currentRoomId}/isSpinning`).off(); db.ref(`rooms/${currentRoomId}/spinData`).off(); } catch(e){}
       }
       if (connectedRef){ try{ connectedRef.off(); } catch(e){} connectedRef = null; }
       if (playerRef){
-        try{ playerRef.onDisconnect().cancel().catch(()=>{}); playerRef.remove().catch(()=>{}); } catch(e){}
+        try{ playerRef.onDisconnect().cancel().catch(()=>{}); playerRef.update({ online: false, lastSeen: firebase.database.ServerValue.TIMESTAMP }).catch(()=>{}); } catch(e){}
         playerRef = null;
       }
-      // if I'm host and leaving voluntarily, remove host node so election runs
+      // if I'm host and leaving voluntarily, remove host node to trigger election immediately
       if (isHost && hostRef){
         try{ hostRef.onDisconnect().cancel().catch(()=>{}); hostRef.remove().catch(()=>{}); } catch(e){}
         hostOnDisconnectRegistered = false;
@@ -451,9 +484,6 @@
       loginModal.classList.remove('hidden');
       document.getElementById('statusBadge').textContent = 'Conectando...';
     }
-
-    window.addEventListener('beforeunload', () => { leaveRoomImmediately(); });
-    window.addEventListener('pagehide', () => { leaveRoomImmediately(); });
 
     // share handlers
     function copyRoomLink(){
@@ -484,12 +514,20 @@
     shareBtn.addEventListener('click', shareLink);
     copyRoomBtn.addEventListener('click', copyRoomLink);
 
-    // auto-fill room from query
+    // auto-fill room from query and optionally auto-join if username stored
     const urlParams = new URLSearchParams(window.location.search);
     const roomFromURL = urlParams.get('room');
     if (roomFromURL) document.getElementById('roomInput').value = roomFromURL;
-
     initFirebase();
+
+    // auto-join if username already stored and room param present
+    if (roomFromURL && localStorage.getItem(STORED_USERNAME_KEY)) {
+      // small delay to allow initFirebase/db readiness
+      setTimeout(() => {
+        document.getElementById('usernameInput').value = localStorage.getItem(STORED_USERNAME_KEY);
+        joinRoom(roomFromURL, false);
+      }, 500);
+    }
   </script>
 </body>
 </html>
