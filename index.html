@@ -3,105 +3,215 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Roleta EA FC 26 — Turnos (Host remove / disconnect remove)</title>
+  <title>Roleta EA FC 26 — Multiplayer</title>
 
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-database-compat.js"></script>
 
   <style>
+    /* ============================
+       Visual / Responsive Wallpaper
+       ============================ */
     :root{
-      --bg:#0b0f19;
-      --card:#1e293b;
-      --accent-grad:linear-gradient(135deg,#00f2fe,#4facfe);
-      --text:#f8fafc;
-      --border:#334155;
-      --good:#10b981;
-      --danger:#ff4d6d;
-      --muted:#94a3b8;
+      --overlay-strong: rgba(2,6,23,0.64);
+      --overlay-soft: rgba(2,6,23,0.36);
+      --glass-bg: rgba(255,255,255,0.03);
+      --glass-border: rgba(255,255,255,0.06);
+      --accent: #00f2fe;
+      --accent-2: #00ff87;
+      --text: #e6eef6;
+      --muted: #95a3b8;
+      --success: #10b981;
+      --danger: #ff4d6d;
     }
-    *{box-sizing:border-box;margin:0;padding:0;font-family:Segoe UI, Roboto, Arial, sans-serif}
-    body{background:var(--bg);color:var(--text);display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:20px}
-    header{text-align:center;margin-bottom:8px}
-    header h1{font-size:1.6rem;background:linear-gradient(to right,#00f2fe,#4facfe,#00ff87);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-    .card{width:100%;max-width:920px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,0.5)}
-    .meta-row{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
-    .room-ident{display:flex;align-items:center;gap:10px}
-    .room-id{font-weight:800}
-    .turn-banner{width:100%;border-radius:10px;padding:12px;text-align:center;margin-bottom:12px;font-weight:900;font-size:1.1rem;display:none}
-    .turn-banner.you{background:linear-gradient(90deg, rgba(16,185,129,0.12), rgba(16,185,129,0.06));color:var(--good);border:1px solid rgba(16,185,129,0.2)}
-    .turn-banner.wait{background:linear-gradient(90deg, rgba(148,163,184,0.04), rgba(148,163,184,0.02));color:var(--muted);border:1px solid rgba(52,65,85,0.12)}
-    .turn-banner.wait-red{background:linear-gradient(90deg, rgba(255,77,109,0.06), rgba(255,77,109,0.03));color:var(--danger);border:1px solid rgba(255,77,109,0.12)}
-    .row{display:flex;gap:8px;align-items:center}
-    .input{padding:10px;border-radius:8px;border:1px solid var(--border);background:#0f172a;color:var(--text)}
-    .btn{padding:10px 14px;border-radius:8px;border:none;cursor:pointer;font-weight:800}
-    .btn.create{background:linear-gradient(135deg,#34d399,#60a5fa);color:#06202a}
-    .btn.enter{background:var(--accent-grad);color:#06202a}
-    .btn.disabled{opacity:0.45;cursor:not-allowed}
-    .players{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
-    .player{background:#0f172a;padding:8px 10px;border-radius:8px;border:1px solid var(--border);color:#cbd5e1;display:flex;align-items:center;gap:8px}
-    .player.host{background:linear-gradient(135deg,#fef3c7,#fde68a);color:#452a00;font-weight:800}
-    .player.inactive{opacity:0.55}
-    .player.turn{outline:2px solid rgba(16,185,129,0.12);box-shadow:0 8px 20px rgba(16,185,129,0.03)}
-    .roulette-wrapper{position:relative;height:120px;border-radius:10px;background:#0f172a;overflow:hidden;border:2px solid var(--border);margin-bottom:12px}
-    .roulette-wrapper::before{content:'';position:absolute;left:50%;top:0;width:4px;height:100%;background:#ff0055;transform:translateX(-50%);z-index:10}
-    .roulette-container{position:absolute;left:0;top:0;height:100%;display:flex;align-items:center;will-change:transform}
-    .roulette-item{min-width:180px;height:80px;margin:0 5px;background:linear-gradient(145deg,#1e293b,#0f172a);border-radius:8px;border:1px solid #334155;display:flex;flex-direction:column;justify-content:center;align-items:center;font-weight:700;color:#e2e8f0}
-    .controls{display:flex;gap:8px;align-items:center;margin-bottom:10px}
-    .copy-btn{background:#334155;color:var(--text);border:none;padding:8px;border-radius:8px;cursor:pointer}
-    .muted{color:var(--muted)}
-    .result{padding:10px;border-radius:8px;border:1px solid rgba(16,185,129,0.18);display:none;margin-top:10px}
-    #notice{position:fixed;top:12px;right:12px;background:rgba(16,185,129,0.12);color:#a7f3d0;padding:8px 12px;border:1px solid rgba(16,185,129,0.25);border-radius:8px;z-index:9999;display:none}
-    .player-controls { display:flex; gap:6px; margin-left:8px; }
-    .remove-btn { background:#7f1d1d;color:#fff;border-radius:6px;padding:6px 8px;border:none;cursor:pointer }
-    @media (max-width:640px){ .roulette-item{min-width:140px} .turn-banner{font-size:1rem} }
+
+    html,body {
+      height: 100%;
+      margin: 0;
+      font-family: "Segoe UI", Roboto, system-ui, -apple-system, "Helvetica Neue", Arial;
+      color: var(--text);
+      -webkit-font-smoothing:antialiased;
+      -moz-osx-font-smoothing:grayscale;
+      background-color: #03060a;
+    }
+
+    /* Use your repo images (raw URLs) */
+    body.site-wallpaper {
+      background-image: url('https://raw.githubusercontent.com/eduardovfreire99/roleta-ea-fc/b7898091669ab5ff5c9d4db62b6bbb391cefb680/Web.png');
+      background-size: cover;
+      background-position: center center;
+      background-repeat: no-repeat;
+      background-attachment: fixed;
+      position: relative;
+      overflow-x: hidden;
+    }
+    body.site-wallpaper::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(180deg, var(--overlay-strong), transparent 30%, var(--overlay-strong));
+      pointer-events: none;
+      z-index: 0;
+    }
+    @media (max-width: 900px) {
+      body.site-wallpaper {
+        background-image: url('https://raw.githubusercontent.com/eduardovfreire99/roleta-ea-fc/b7898091669ab5ff5c9d4db62b6bbb391cefb680/Mobile.png');
+        background-attachment: scroll;
+      }
+      body.site-wallpaper::before {
+        background: linear-gradient(180deg, rgba(2,6,23,0.58), rgba(2,6,23,0.18));
+      }
+    }
+
+    /* Ensure main app containers render above overlay */
+    .container, .card, #mainContainer, #loginModal, #loginArea, #roomArea {
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ============================
+       Login glass styles
+       ============================ */
+    .login-glass, .login-container-glass {
+      background: linear-gradient(135deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      padding: 22px;
+      box-shadow: 0 12px 30px rgba(2,6,23,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
+      backdrop-filter: blur(8px) saturate(120%);
+      -webkit-backdrop-filter: blur(8px) saturate(120%);
+      max-width: 560px;
+      margin: 18px auto;
+    }
+
+    .login-brand { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+    .login-brand .logo { width:56px; height:56px; border-radius:10px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); display:flex; align-items:center; justify-content:center; font-weight:900; color:#031018; box-shadow: 0 6px 18px rgba(0,0,0,0.6); flex: 0 0 56px; }
+    .login-brand h2 { margin:0; font-size:1.05rem; letter-spacing:0.3px; color:var(--text); }
+    .login-brand p { margin:0; color:var(--muted); font-size:0.85rem; }
+
+    .login-glass input[type="text"], .login-glass input[type="number"], .login-glass .input {
+      width:100%;
+      padding:12px 14px;
+      background: rgba(5,10,20,0.45);
+      border: 1px solid rgba(255,255,255,0.04);
+      border-radius: 10px;
+      color:var(--text);
+      outline: none;
+      transition: box-shadow .18s ease, border-color .18s ease, transform .08s ease;
+      font-size:0.98rem;
+      box-sizing: border-box;
+    }
+    .login-glass input::placeholder { color: #7f8a98; }
+    .login-glass input:focus {
+      box-shadow: 0 8px 30px rgba(0,242,254,0.07);
+      border-color: rgba(0,242,254,0.5);
+      transform: translateY(-1px);
+    }
+
+    .login-glass .btn {
+      padding:12px 14px; border-radius: 10px; font-weight:900; letter-spacing:0.6px; border:none; cursor:pointer;
+      transition: transform .12s ease, box-shadow .12s ease;
+    }
+    .login-glass .btn.create { background: linear-gradient(90deg,var(--accent),var(--accent-2)); color: #042024; box-shadow: 0 10px 30px rgba(0,242,254,0.06); }
+    .login-glass .btn.join { background: rgba(255,255,255,0.03); color: var(--text); border: 1px solid rgba(255,255,255,0.04); }
+    .login-glass .btn:active { transform: translateY(1px) scale(.997); }
+
+    .login-glass .btn-row { display:flex; gap:10px; margin-top:12px; }
+    .login-glass .status-badge { display:inline-block; padding:6px 12px; border-radius:999px; background:rgba(255,255,255,0.03); color:var(--muted); font-weight:700; font-size:0.85rem; }
+
+    @media (max-width:900px) {
+      .login-glass, .login-container-glass { margin: 12px; padding:16px; max-width: 420px; border-radius:12px; }
+      .login-brand .logo { width:48px; height:48px; }
+    }
+
+    /* Main app base layout */
+    .app-wrapper { width:100%; max-width:1200px; margin: 18px auto; padding: 20px; box-sizing:border-box; }
+    .card { background: linear-gradient(180deg, rgba(3,7,14,0.18), rgba(3,7,14,0.45)); border-radius:12px; border:1px solid rgba(255,255,255,0.03); padding:20px; }
+
+    /* Turn banner and visual improvements */
+    .turn-banner { width:100%; border-radius:10px; padding:12px; text-align:center; margin-bottom:12px; font-weight:900; font-size:1.1rem; display:none; }
+    .turn-banner.you { background: linear-gradient(90deg, rgba(16,185,129,0.12), rgba(16,185,129,0.06)); color: var(--success); border: 1px solid rgba(16,185,129,0.2); }
+    .turn-banner.wait { background: linear-gradient(90deg, rgba(148,163,184,0.04), rgba(148,163,184,0.02)); color: var(--muted); border: 1px solid rgba(52,65,85,0.12); }
+    .turn-banner.wait-red { background: linear-gradient(90deg, rgba(255,77,109,0.06), rgba(255,77,109,0.03)); color: var(--danger); border: 1px solid rgba(255,77,109,0.12); }
+
+    /* small elements kept from previous styling to maintain JS compatibility */
+    .players { margin-top:12px; display:flex; flex-wrap:wrap; gap:8px; }
+    .player { background:#0f172a; padding:8px 12px; border-radius:8px; border:1px solid rgba(255,255,255,0.04); color:#cbd5e1; display:flex; gap:8px; align-items:center; }
+    .player.host { background: linear-gradient(135deg,#fef3c7,#fde68a); color:#452a00; font-weight:800; }
+
+    .roulette-wrapper { position:relative; height:120px; border-radius:12px; background:#0b1220; overflow:hidden; border:2px solid rgba(255,255,255,0.03); margin-top:16px; }
+
+    /* Buttons */
+    .copy-btn { background:#334155; color:var(--text); border:none; padding:8px; border-radius:8px; cursor:pointer; }
+
+    /* responsiveness */
+    @media (max-width:900px) {
+      .app-wrapper { padding:14px; }
+      .roulette-wrapper { height:110px; }
+    }
   </style>
 </head>
-<body>
-  <div id="notice"></div>
-
-  <header>
-    <h1>Roleta EA FC 26 — Turnos</h1>
-    <div class="muted">Host controla a sala; cada jogador gira na sua vez; host pode remover jogadores</div>
-  </header>
-
-  <div class="card">
-    <div id="loginArea" class="center" style="margin-bottom:12px">
-      <div class="row" style="justify-content:center;gap:10px">
-        <input id="usernameInput" class="input" placeholder="Seu nome" />
-        <button id="createBtn" class="btn create">Criar Sala</button>
-        <button id="showJoinBtn" class="btn enter">Entrar</button>
+<body class="site-wallpaper">
+  <div class="app-wrapper">
+    <!-- Login area (glass) - keeps JS ids -->
+    <div id="loginArea" class="login-glass" style="max-width:640px;">
+      <div class="login-brand">
+        <div class="logo">FC</div>
+        <div>
+          <h2>Sorteador EA FC 26</h2>
+          <p>Digite seu nome para entrar ou crie uma sala</p>
+        </div>
       </div>
-      <div id="joinBox" class="row" style="margin-top:10px;display:none">
-        <input id="joinCodeInput" class="input" placeholder="Código da sala (6 dígitos)" />
-        <button id="confirmJoinBtn" class="btn enter">Confirmar</button>
-        <div id="joinError" class="muted" style="margin-left:8px;display:none;color:#ff9b9b"></div>
+
+      <div style="margin-top:8px">
+        <label class="muted" style="font-size:0.86rem">Seu nome</label>
+        <input id="usernameInput" placeholder="Seu nome" />
+      </div>
+
+      <div style="margin-top:10px">
+        <label class="muted" style="font-size:0.86rem">Código da sala (opcional)</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="joinCodeInput" class="input" placeholder="Código da sala (6 dígitos)" />
+          <button id="confirmJoinBtn" class="btn join">Confirmar</button>
+        </div>
+      </div>
+
+      <div class="btn-row" style="margin-top:12px;justify-content:flex-end">
+        <button id="createBtn" class="btn create">Criar Sala</button>
+        <button id="showJoinBtn" class="btn join" style="background:transparent;border:1px solid rgba(255,255,255,0.04);margin-left:8px">Entrar</button>
+      </div>
+
+      <div style="margin-top:10px">
+        <span class="status-badge" id="statusBadge">Conectando...</span>
       </div>
     </div>
 
-    <div id="roomArea" style="display:none">
-      <div class="meta-row">
-        <div class="room-ident">
+    <!-- Main card (will be shown after join) -->
+    <div id="roomCard" class="card" style="display:none;margin-top:18px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+        <div style="display:flex;align-items:center;gap:12px">
           <div class="muted">Sala</div>
-          <div class="room-id" id="roomDisplay">-</div>
+          <div id="roomDisplay" style="font-weight:900;font-size:1rem">-</div>
           <div id="turnInfo" class="muted" style="margin-left:12px"></div>
         </div>
-        <div class="row">
+
+        <div style="display:flex;align-items:center;gap:8px">
           <div id="playersCount" class="muted">0 jogadores</div>
-          <div id="shareControls" style="display:none;margin-left:10px">
+          <div id="shareControls" style="display:none;margin-left:8px">
             <button id="shareBtn" class="copy-btn">📤</button>
             <button id="copyRoomBtn" class="copy-btn">📋</button>
-            <button id="leaveBtn" class="copy-btn">🚪</button>
+            <button id="leaveBtn" class="copy-btn">🚪 Sair</button>
           </div>
         </div>
       </div>
 
-      <div id="turnBanner" class="turn-banner"></div>
+      <div id="turnBanner" class="turn-banner" style="display:none"></div>
 
-      <div id="playersList" class="players" style="margin-bottom:12px"></div>
+      <div id="playersList" class="players"></div>
 
-      <div class="controls">
+      <div style="display:flex;align-items:center;gap:8px;margin-top:12px" class="controls">
         <label class="muted">Filtrar liga</label>
-        <select id="leagueSelect" class="input" style="min-width:200px">
+        <select id="leagueSelect" class="input" style="min-width:160px;">
           <option value="all">Todas as Ligas (96)</option>
           <option value="premier">Premier League</option>
           <option value="bundesliga">Bundesliga</option>
@@ -109,21 +219,21 @@
           <option value="ligue1">Ligue 1</option>
           <option value="laliga">La Liga</option>
         </select>
-        <div id="poolInfo" class="muted">96 times no pool</div>
+        <div id="poolInfo" class="muted" style="margin-left:auto">96 times no pool</div>
       </div>
 
       <div id="hostStatus" class="muted" style="margin-top:8px"></div>
 
       <div id="spinIndicator" class="muted" style="margin-top:8px;display:none">⏳ Alguém está girando...</div>
 
-      <div class="roulette-wrapper" style="margin-top:12px">
+      <div class="roulette-wrapper">
         <div id="rouletteContainer" class="roulette-container"></div>
       </div>
 
       <button id="spinBtn" class="btn create" style="width:100%;margin-top:12px">Girar Roleta</button>
 
-      <div id="resultPanel" class="result center">
-        <div style="color:var(--good);font-weight:800">Time Sorteado!</div>
+      <div id="resultPanel" class="result" style="display:none">
+        <div style="color:var(--success);font-weight:800">Time Sorteado!</div>
         <div id="resultTeam" style="font-size:1.3rem;font-weight:900;margin-top:6px">-</div>
         <div id="resultLeague" class="muted" style="margin-top:6px">-</div>
         <div id="resultPlayer" class="muted" style="margin-top:6px">-</div>
@@ -132,7 +242,16 @@
   </div>
 
   <script>
-    // Firebase config (mantive o seu)
+    /* ============================
+       Firebase + App logic (preserves all behavior)
+       - Turn order
+       - Host election / removal
+       - Presence + active flag (visibility)
+       - Host can remove players
+       - Requires >=2 players to spin
+       - Banner and spin button state updates
+       ============================ */
+
     const firebaseConfig = {
       apiKey: "AIzaSyCjfxIJyKBsg9U_GJu4JP2Taq6fMXiGpMA",
       authDomain: "roleta-ea-fc-cc40c.firebaseapp.com",
@@ -143,14 +262,17 @@
       appId: "1:394316068027:web:39151123593571769b659e"
     };
 
-    // storage keys
+    // STORAGE KEYS
     const KEY_PLAYER = 'roleta_player_id';
     const KEY_NAME = 'roleta_username';
     const KEY_ROOM = 'roleta_room_id';
 
-    // identity
+    // identity persisted
     let currentPlayerId = localStorage.getItem(KEY_PLAYER);
-    if (!currentPlayerId) { currentPlayerId = Math.random().toString(36).substr(2,9); localStorage.setItem(KEY_PLAYER, currentPlayerId); }
+    if (!currentPlayerId) {
+      currentPlayerId = Math.random().toString(36).substr(2,9);
+      localStorage.setItem(KEY_PLAYER, currentPlayerId);
+    }
 
     let db;
     let currentUsername = '';
@@ -159,7 +281,7 @@
     let isSpinning = false;
     const ITEM_WIDTH = 190;
 
-    // presence/host/settings
+    // presence/host vars
     let playerRef = null;
     let connectedRef = null;
     let onDisconnectRegistered = false;
@@ -170,19 +292,18 @@
     let settingsRef = null;
     const GRACE_MS = 15000;
 
-    // turn order cache
+    // turn order
     let latestTurnOrder = [];
 
-    // DOM
+    // DOM refs
     const usernameInput = document.getElementById('usernameInput');
     const createBtn = document.getElementById('createBtn');
     const showJoinBtn = document.getElementById('showJoinBtn');
-    const joinBox = document.getElementById('joinBox');
+    const joinBox = document.getElementById('joinBox'); // not used visually here
     const joinCodeInput = document.getElementById('joinCodeInput');
     const confirmJoinBtn = document.getElementById('confirmJoinBtn');
-    const joinError = document.getElementById('joinError');
 
-    const roomArea = document.getElementById('roomArea');
+    const roomAreaCard = document.getElementById('roomCard');
     const roomDisplay = document.getElementById('roomDisplay');
     const playersList = document.getElementById('playersList');
     const playersCount = document.getElementById('playersCount');
@@ -204,12 +325,15 @@
     const turnInfo = document.getElementById('turnInfo');
     const hostStatus = document.getElementById('hostStatus');
     const turnBanner = document.getElementById('turnBanner');
+    const statusBadge = document.getElementById('statusBadge');
 
-    // init firebase
-    function initFirebase(){ const app = firebase.initializeApp(firebaseConfig); db = firebase.database(app); }
+    function initFirebase(){
+      const app = firebase.initializeApp(firebaseConfig);
+      db = firebase.database(app);
+    }
     initFirebase();
 
-    // teams DB
+    // teams DB (same as before)
     const teamsDB = {
       premier: { name: "Premier League", teams: ["Arsenal","Aston Villa","Bournemouth","Brentford","Brighton","Chelsea","Crystal Palace","Everton","Fulham","Ipswich Town","Leicester City","Liverpool","Manchester City","Manchester United","Newcastle United","Nottingham Forest","Southampton","Tottenham Hotspur","West Ham","Wolverhampton"] },
       bundesliga: { name: "Bundesliga", teams: ["Bayer Leverkusen","Bayern de Munique","Borussia Dortmund","Borussia Mönchengladbach","Eintracht Frankfurt","FC Augsburg","FC Heidenheim","FC St. Pauli","Holstein Kiel","Mainz 05","RB Leipzig","SC Freiburg","SV Werder Bremen","TSG Hoffenheim","Union Berlin","VfB Stuttgart","VfL Bochum","VfL Wolfsburg"] },
@@ -222,33 +346,40 @@
     function shuffle(a){ return a.sort(()=>Math.random()-0.5); }
     function getActivePoolFromLeague(leagueValue){
       let pool=[];
-      if (!leagueValue || leagueValue === 'all') { Object.keys(teamsDB).forEach(k => teamsDB[k].teams.forEach(t => pool.push({ name: t, league: teamsDB[k].name }))); }
-      else { if (teamsDB[leagueValue]) teamsDB[leagueValue].teams.forEach(t => pool.push({ name: t, league: teamsDB[leagueValue].name })); }
+      if (!leagueValue || leagueValue === 'all') {
+        Object.keys(teamsDB).forEach(k => teamsDB[k].teams.forEach(t => pool.push({ name: t, league: teamsDB[k].name })));
+      } else {
+        if (teamsDB[leagueValue]) teamsDB[leagueValue].teams.forEach(t => pool.push({ name: t, league: teamsDB[leagueValue].name }));
+      }
       return pool;
     }
     function getActivePool(){ return getActivePoolFromLeague(leagueSelect.value); }
     function updatePoolInfo(){ currentPool = getActivePool(); poolInfo.textContent = `${currentPool.length} times disponíveis`; setupStaticRoulette(); }
-    function setupStaticRoulette(){ const pool = getActivePool(); rouletteContainer.style.transition='none'; rouletteContainer.style.transform='translateX(0px)'; rouletteContainer.innerHTML=''; const display = pool.length>5 ? pool.slice(0,10) : [...pool,...pool,...pool]; display.forEach(it => { const d=document.createElement('div'); d.className='roulette-item'; d.innerHTML=`<div>${it.name}</div><div style="font-size:0.7rem;color:#94a3b8;margin-top:4px">${it.league}</div>`; rouletteContainer.appendChild(d); }); }
+    function setupStaticRoulette(){ const pool = getActivePool(); rouletteContainer.style.transition='none'; rouletteContainer.style.transform='translateX(0px)'; rouletteContainer.innerHTML=''; const display = pool.length>5 ? pool.slice(0,10) : [...pool,...pool,...pool]; display.forEach(it=>{ const d=document.createElement('div'); d.className='roulette-item'; d.innerHTML=`<div>${it.name}</div><div style="font-size:0.7rem;color:#94a3b8;margin-top:4px">${it.league}</div>`; rouletteContainer.appendChild(d); }); }
 
-    async function generateUniqueRoomCode(attempts=8){ for (let i=0;i<attempts;i++){ const code = Math.floor(Math.random()*1000000).toString().padStart(6,'0'); const snap = await db.ref(`rooms/${code}`).get(); if (!snap.exists()) return code; } throw new Error('Não foi possível gerar código único'); }
+    async function generateUniqueRoomCode(attempts = 8) {
+      for (let i = 0; i < attempts; i++) {
+        const code = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
+        const snap = await db.ref(`rooms/${code}`).get();
+        if (!snap.exists()) return code;
+      }
+      throw new Error('Não foi possível gerar código único. Tente novamente.');
+    }
 
-    function showNotice(msg, ms=2500){ notice.textContent = msg; notice.style.display = 'block'; setTimeout(()=> notice.style.display='none', ms); }
+    function showNotice(msg, ms = 2500) { notice.textContent = msg; notice.style.display = 'block'; setTimeout(()=> notice.style.display='none', ms); }
 
     function applySettings(settings){ if (!settings) return; if (typeof settings.league !== 'undefined') { leagueSelect.value = settings.league || 'all'; updatePoolInfo(); showNotice(`Host mudou a liga para: ${settings.league}`, 1400); } }
 
-    // set active flag per-tab and register onDisconnect to REMOVE player node on full disconnect
     function setActiveFlag(active) { if (!playerRef) return; playerRef.update({ active: !!active }).catch(()=>{}); }
     document.addEventListener('visibilitychange', () => { setActiveFlag(document.visibilityState === 'visible'); updateSpinButtonState().catch(()=>{}); });
 
-    // remove player from turnOrder and normalize currentTurnIndex
+    // remove player from turnOrder and normalize
     async function removeFromTurnOrderAndNormalize(playerId){
       if (!currentRoomId) return;
-      // remove from turnOrder
       await db.ref(`rooms/${currentRoomId}/turnOrder`).transaction(current => {
         if (!current || !Array.isArray(current)) return current;
         return current.filter(id => id !== playerId);
       });
-      // normalize currentTurnIndex
       await db.ref(`rooms/${currentRoomId}`).transaction(room => {
         if (!room) return room;
         const order = room.turnOrder || [];
@@ -259,52 +390,44 @@
       });
     }
 
-    // central spin-button state: requires >=2 players, host online & active, all players active, current turn equals you
     async function updateSpinButtonState() {
       try {
-        if (!currentRoomId) { spinBtn.disabled = true; updateTurnBanner(false,''); return; }
+        if (!currentRoomId) { spinBtn.disabled = true; updateTurnBanner(false, ''); return; }
         const spinSnap = await db.ref(`rooms/${currentRoomId}/isSpinning`).get();
-        if (spinSnap.exists() && spinSnap.val()) { spinBtn.disabled = true; updateTurnBanner(false,'Giro em andamento'); return; }
-
+        if (spinSnap.exists() && spinSnap.val()) { spinBtn.disabled = true; updateTurnBanner(false, 'Giro em andamento'); return; }
         const hostSnap = await db.ref(`rooms/${currentRoomId}/host`).get();
-        if (!hostSnap.exists()) { spinBtn.disabled = true; updateTurnBanner(false,'Sem host'); return; }
+        if (!hostSnap.exists()) { spinBtn.disabled = true; updateTurnBanner(false, 'Sem host'); return; }
         const hostVal = hostSnap.val();
-        if (!hostVal || hostVal.online !== true) { spinBtn.disabled = true; updateTurnBanner(false,'Aguardando host'); return; }
-
+        if (!hostVal || hostVal.online !== true) { spinBtn.disabled = true; updateTurnBanner(false, 'Aguardando host'); return; }
         const playersSnap = await db.ref(`rooms/${currentRoomId}/players`).get();
         const players = playersSnap.val() || {};
         const entries = Object.entries(players);
-        if (entries.length < 2) { spinBtn.disabled = true; updateTurnBanner(false,'Precisa de pelo menos 2 jogadores'); return; }
+        if (entries.length < 2) { spinBtn.disabled = true; updateTurnBanner(false, 'Precisa de pelo menos 2 jogadores'); return; }
         const allActive = entries.every(([id,p]) => p && p.online === true && p.active === true);
-        if (!allActive) { spinBtn.disabled = true; updateTurnBanner(false,'Aguardando todos ativos'); return; }
-
+        if (!allActive) { spinBtn.disabled = true; updateTurnBanner(false, 'Aguardando todos ativos'); return; }
         const orderSnap = await db.ref(`rooms/${currentRoomId}/turnOrder`).get();
         const order = orderSnap.val() || [];
-        if (!Array.isArray(order) || order.length < 1) { spinBtn.disabled = true; updateTurnBanner(false,'Ordem inválida'); return; }
+        if (!Array.isArray(order) || order.length < 1) { spinBtn.disabled = true; updateTurnBanner(false, 'Ordem inválida'); return; }
         const idxSnap = await db.ref(`rooms/${currentRoomId}/currentTurnIndex`).get();
         const idx = idxSnap.exists() ? idxSnap.val() : 0;
         const currentPid = order[idx % order.length];
-
         if (currentPid === currentPlayerId) {
           spinBtn.disabled = false;
-          updateTurnBanner(true,'É SUA VEZ — GIRAR AGORA');
+          updateTurnBanner(true, 'É SUA VEZ — GIRAR AGORA');
         } else {
           spinBtn.disabled = true;
-          // get name of currentPid
           const pSnap = await db.ref(`rooms/${currentRoomId}/players/${currentPid}`).get();
           const p = pSnap.val();
           const name = p && p.username ? p.username : 'Jogador';
-          // show red highlight because you're waiting for another player's turn
           updateTurnBanner(false, `Vez de ${name}`, true);
         }
       } catch (e) {
         console.warn('updateSpinButtonState error', e);
         spinBtn.disabled = true;
-        updateTurnBanner(false,'');
+        updateTurnBanner(false, '');
       }
     }
 
-    // update banner; if redFlag true, use red style
     function updateTurnBanner(isYourTurn, text, redFlag=false) {
       if (isYourTurn) {
         turnBanner.className = 'turn-banner you';
@@ -323,80 +446,78 @@
       }
     }
 
-    // ensure atomic safe advance with wrap
-    async function advanceTurn(){
+    async function advanceTurn() {
       if (!currentRoomId) return;
       const idxRef = db.ref(`rooms/${currentRoomId}/currentTurnIndex`);
-      await idxRef.transaction(current => { if (current === null || current === undefined) return 0; return current + 1; });
+      await idxRef.transaction(current => {
+        if (current === null || current === undefined) return 0;
+        return current + 1;
+      });
       const orderSnap = await db.ref(`rooms/${currentRoomId}/turnOrder`).get();
       const order = orderSnap.val() || [];
       if (!Array.isArray(order) || order.length === 0) { await idxRef.set(0); }
       else { const idxSnap = await idxRef.get(); const val = idxSnap.exists() ? idxSnap.val() : 0; await idxRef.set(val % order.length); }
     }
 
-    // create room
+    // CREATE ROOM
     createBtn.addEventListener('click', async () => {
       const name = usernameInput.value.trim();
-      if (!name) { alert('Digite seu nome antes de criar a sala.'); return; }
-      currentUsername = name; localStorage.setItem(KEY_NAME, name); createBtn.disabled = true;
+      if (!name){ alert('Digite seu nome antes de criar a sala.'); return; }
+      currentUsername = name;
+      localStorage.setItem(KEY_NAME, name);
+      createBtn.disabled = true;
       try {
         const code = await generateUniqueRoomCode();
         const hostNode = db.ref(`rooms/${code}/host`);
         const hostObj = { playerId: currentPlayerId, username: currentUsername, online: true, createdAt: firebase.database.ServerValue.TIMESTAMP };
         await hostNode.set(hostObj);
         try { db.ref(`rooms/${code}`).onDisconnect().remove(); } catch(e){}
-        await db.ref(`rooms/${code}/settings`).set({ league:'all' });
+        await db.ref(`rooms/${code}/settings`).set({ league: 'all' });
         await db.ref(`rooms/${code}/turnOrder`).set([currentPlayerId]);
         await db.ref(`rooms/${code}/currentTurnIndex`).set(0);
         localStorage.setItem(KEY_ROOM, code);
         await enterRoom(code, true);
-      } catch(e) { console.error(e); alert('Erro ao criar sala'); createBtn.disabled = false; }
+      } catch (err) {
+        console.error(err);
+        alert('Erro ao criar sala. Tente novamente.');
+        createBtn.disabled = false;
+      }
     });
 
-    // show/hide join
-    showJoinBtn.addEventListener('click', () => { joinError.style.display='none'; joinBox.style.display = (joinBox.style.display === 'none' || joinBox.style.display === '') ? 'flex' : 'none'; if (joinBox.style.display !== 'none') joinCodeInput.focus(); });
-
-    // confirm join
+    // JOIN flow
+    showJoinBtn.addEventListener('click', () => {
+      // reveal join input area (we used joinCodeInput visible by default in this layout)
+      joinCodeInput.focus();
+    });
     confirmJoinBtn.addEventListener('click', async () => {
       const code = (joinCodeInput.value || '').trim();
-      if (!/^\d{6}$/.test(code)) { joinError.textContent='Código inválido — 6 dígitos'; joinError.style.display='block'; return; }
-      joinError.style.display='none';
+      if (!/^\d{6}$/.test(code)) { alert('Código inválido — use 6 dígitos.'); return; }
       try {
         const roomSnap = await db.ref(`rooms/${code}`).get();
-        if (!roomSnap.exists()) { joinError.textContent='Sala não encontrada.'; joinError.style.display='block'; return; }
+        if (!roomSnap.exists()) { alert('Sala não encontrada.'); return; }
         const hostSnap = await db.ref(`rooms/${code}/host`).get();
         const hostVal = hostSnap.val();
-        if (!hostVal || hostVal.online !== true) { joinError.textContent='Sala sem host disponível.'; joinError.style.display='block'; return; }
+        if (!hostVal || hostVal.online !== true) { alert('Sala sem host disponível.'); return; }
         currentUsername = usernameInput.value.trim();
-        if (!currentUsername) { joinError.textContent='Digite seu nome.'; joinError.style.display='block'; return; }
+        if (!currentUsername) { alert('Digite seu nome para entrar.'); return; }
         localStorage.setItem(KEY_NAME, currentUsername);
         localStorage.setItem(KEY_ROOM, code);
         await enterRoom(code, false);
-      } catch(e) { console.error(e); joinError.textContent='Erro ao entrar'; joinError.style.display='block'; }
+      } catch (e) {
+        console.error(e);
+        alert('Erro ao entrar — verifique o código e tente novamente.');
+      }
     });
 
-    // host removal of a player
-    async function hostRemovePlayer(targetId) {
-      if (!currentRoomId || !isHost) return;
-      // remove player's node and remove from turnOrder & normalize
-      try {
-        await db.ref(`rooms/${currentRoomId}/players/${targetId}`).remove();
-        await removeFromTurnOrderAndNormalize(targetId);
-        await updateSpinButtonState();
-      } catch(e){ console.warn('hostRemovePlayer err', e); }
-    }
-
-    // when player is removed (child_removed), ensure turnOrder updated and if it's you, clean up
+    // listen for player removed events and react
     function listenForPlayerRemoved(roomId) {
       const playersRef = db.ref(`rooms/${roomId}/players`);
       playersRef.on('child_removed', async (snap) => {
         const removedId = snap.key;
         await removeFromTurnOrderAndNormalize(removedId);
         await updateSpinButtonState();
-        // if I was removed (someone removed me), then leaveRoomCleanup locally
         if (removedId === currentPlayerId && currentRoomId === roomId) {
-          // show an alert then cleanup UI
-          alert('Você foi removido da sala pelo host ou perdeu a conexão. Voltando ao início.');
+          alert('Você foi removido da sala pelo host ou desconectado. Voltando à tela inicial.');
           cleanupLocalAfterRemoval();
         }
       });
@@ -406,18 +527,17 @@
       try { db.ref(`rooms/${currentRoomId}/players/${currentPlayerId}`).off(); } catch(e){}
       localStorage.removeItem(KEY_ROOM);
       currentRoomId = '';
-      document.getElementById('loginArea').style.display='block';
-      roomArea.style.display='none';
+      document.getElementById('loginArea').style.display = 'block';
+      roomAreaCard.style.display = 'none';
     }
 
-    // enter room common
+    // enter room common routine
     async function enterRoom(code, createdAsHost=false) {
-      document.getElementById('loginArea').style.display='none';
-      roomArea.style.display='block';
+      document.getElementById('loginArea').style.display = 'none';
+      roomAreaCard.style.display = 'block';
       roomDisplay.textContent = code;
       currentRoomId = code;
 
-      // ensure we listen to child_removed to react on removals
       listenForPlayerRemoved(code);
 
       playerRef = db.ref(`rooms/${code}/players/${currentPlayerId}`);
@@ -426,10 +546,7 @@
       connectedRef.on('value', snap => {
         if (snap && snap.val() === true) {
           if (!onDisconnectRegistered && playerRef) {
-            try {
-              // remove player node entirely when connection lost (full close)
-              playerRef.onDisconnect().remove();
-            } catch(e){ console.warn('player onDisconnect remove failed', e); }
+            try { playerRef.onDisconnect().remove(); } catch(e){ console.warn(e); }
             onDisconnectRegistered = true;
           }
           if (playerRef) {
@@ -439,7 +556,6 @@
         }
       });
 
-      // host listener
       hostRef = db.ref(`rooms/${code}/host`);
       hostRef.on('value', snap => {
         const v = snap.val();
@@ -448,12 +564,18 @@
         shareControls.style.display = isHost ? 'inline-flex' : 'none';
         hostStatus.textContent = v ? `${v.username} (host) — ${v.online ? 'ativo' : 'ausente'}` : 'Sem host';
         if (isHost) {
-          try { hostRef.update({ online:true, username: currentUsername }).catch(()=>{}); if (!hostOnDisconnectRegistered) { hostRef.onDisconnect().update({ online:false, lastSeen: firebase.database.ServerValue.TIMESTAMP }); hostOnDisconnectRegistered = true; } try { db.ref(`rooms/${code}`).onDisconnect().remove(); } catch(e){} } catch(e){}
+          try {
+            hostRef.update({ online:true, username: currentUsername }).catch(()=>{});
+            if (!hostOnDisconnectRegistered) {
+              hostRef.onDisconnect().update({ online:false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
+              hostOnDisconnectRegistered = true;
+            }
+            try { db.ref(`rooms/${code}`).onDisconnect().remove(); } catch(e){}
+          } catch(e){}
         }
         updateSpinButtonState().catch(()=>{});
       });
 
-      // settings
       settingsRef = db.ref(`rooms/${code}/settings`);
       settingsRef.on('value', snap => {
         const settings = snap.val() || { league:'all' };
@@ -462,7 +584,6 @@
         updateSpinButtonState().catch(()=>{});
       });
 
-      // ensure in turnOrder
       db.ref(`rooms/${code}/turnOrder`).transaction(current => {
         if (!current) return [currentPlayerId];
         if (!Array.isArray(current)) return [currentPlayerId];
@@ -470,17 +591,13 @@
         return current;
       });
 
-      // turn order and index listeners
       db.ref(`rooms/${code}/turnOrder`).on('value', snap => { latestTurnOrder = snap.val() || []; renderTurnUI(); updateSpinButtonState().catch(()=>{}); });
       db.ref(`rooms/${code}/currentTurnIndex`).on('value', snap => { renderTurnUI(); updateSpinButtonState().catch(()=>{}); });
 
-      // players
       db.ref(`rooms/${code}/players`).on('value', snap => { const players = snap.val() || {}; renderPlayers(players); updateSpinButtonState().catch(()=>{}); });
 
-      // lastResult
       db.ref(`rooms/${code}/lastResult`).on('value', snap => { const r = snap.val(); if (r) showResult(r); });
 
-      // isSpinning
       db.ref(`rooms/${code}/isSpinning`).on('value', snap => {
         const s = snap.val();
         if (s && s.playerId !== currentPlayerId) { spinIndicator.style.display='block'; spinBtn.disabled = true; }
@@ -500,13 +617,11 @@
       };
       leaveBtn.onclick = leaveRoomCleanup;
 
-      // also listen if my own player node is removed (host kicked me) — then cleanup locally
       db.ref(`rooms/${code}/players/${currentPlayerId}`).on('value', snap => {
         if (!snap.exists() && currentRoomId === code) {
-          // we were removed (either by disconnect or host removal)
           setTimeout(() => {
             if (currentRoomId === code) {
-              alert('Você foi removido/Desconectado. Voltando à tela inicial.');
+              alert('Você foi removido/desconectado. Voltando à tela inicial.');
               cleanupLocalAfterRemoval();
             }
           }, 100);
@@ -514,7 +629,6 @@
       });
     }
 
-    // render players with host removal button for host
     function renderPlayers(players) {
       playersList.innerHTML = '';
       const arr = Object.entries(players).map(([id,data]) => ({ id, ...data }));
@@ -530,25 +644,19 @@
         const inactive = p.active === false ? ' (inativo)' : '';
         el.textContent = name + you + offline + inactive;
 
-        // host controls: remove button next to each other player
         if (isHost && p.id !== currentPlayerId) {
           const controls = document.createElement('div');
-          controls.className = 'player-controls';
+          controls.style.marginLeft = '8px';
           const removeBtn = document.createElement('button');
           removeBtn.className = 'remove-btn';
           removeBtn.textContent = 'Remover';
-          removeBtn.onclick = () => {
-            if (confirm(`Remover ${p.username || 'Jogador'} da sala?`)) {
-              hostRemovePlayer(p.id);
-            }
-          };
+          removeBtn.onclick = () => { if (confirm(`Remover ${p.username || 'Jogador'} da sala?`)) hostRemovePlayer(p.id); };
           controls.appendChild(removeBtn);
           el.appendChild(controls);
         }
         playersList.appendChild(el);
       });
 
-      // highlight current turn element (best-effort)
       db.ref(`rooms/${currentRoomId}/currentTurnIndex`).get().then(snap => {
         const idx = snap.val() || 0;
         const pid = latestTurnOrder.length ? latestTurnOrder[idx % latestTurnOrder.length] : null;
@@ -559,7 +667,6 @@
       }).catch(()=>{});
     }
 
-    // render turn UI text
     function renderTurnUI(){
       db.ref(`rooms/${currentRoomId}/currentTurnIndex`).get().then(snap => {
         const idx = snap.val() || 0;
@@ -574,25 +681,18 @@
       }).catch(()=>{ turnInfo.textContent = ''; });
     }
 
-    // spin logic (unchanged logic with advanceTurn & post updates)
     async function doSpin(){
       if (!currentRoomId) return;
       if (isSpinning) return;
-
-      // host check
       const hostSnap = await db.ref(`rooms/${currentRoomId}/host`).get();
       const hostVal = hostSnap.val();
       if (!hostVal || hostVal.online !== true) { alert('Aguardando host para girar a roleta'); return; }
-
-      // players active + online
       const playersSnap = await db.ref(`rooms/${currentRoomId}/players`).get();
       const players = playersSnap.val() || {};
       const entries = Object.entries(players);
       if (entries.length < 2) { alert('São necessários pelo menos 2 jogadores para girar.'); return; }
       const allActive = entries.every(([id,p]) => p && p.online === true && p.active === true);
       if (!allActive) { alert('Aguardando todos os jogadores ativos na aba para girar a roleta'); return; }
-
-      // turn check
       const orderSnap = await db.ref(`rooms/${currentRoomId}/turnOrder`).get();
       const order = orderSnap.val() || [];
       if (!Array.isArray(order) || order.length === 0) { alert('Ordem inválida'); return; }
@@ -600,39 +700,29 @@
       const idx = idxSnap.exists() ? idxSnap.val() : 0;
       const currentPid = order[idx % (order.length || 1)];
       if (currentPid !== currentPlayerId) { alert('Não é a sua vez de girar.'); return; }
-
-      // proceed
       isSpinning = true;
       spinBtn.disabled = true;
       resultPanel.style.display = 'none';
       await db.ref(`rooms/${currentRoomId}/isSpinning`).set({ playerId: currentPlayerId, username: currentUsername, startTime: Date.now() });
-
       const pool = getActivePool();
       if (pool.length === 0) { alert('Nenhum time disponível'); return; }
       const winnerIndex = Math.floor(Math.random()*pool.length);
       const winner = pool[winnerIndex];
-
       let extended=[];
       for (let i=0;i<4;i++) extended = extended.concat(shuffle([...pool]));
       const targetIndex = Math.min(60, extended.length-10);
       extended[targetIndex] = winner;
-
       const spinData = { items: extended.map(it=>({name:it.name,league:it.league})), targetIndex, duration:5000, startTime:Date.now(), playerId:currentPlayerId, username:currentUsername };
       await db.ref(`rooms/${currentRoomId}/spinData`).set(spinData);
-
       renderSpinItems(spinData.items);
       animateToIndex(spinData.targetIndex, spinData.duration);
-
       setTimeout(async () => {
         await db.ref(`rooms/${currentRoomId}/lastResult`).set({ winner: winner.name, league: winner.league, username: currentUsername, playerId: currentPlayerId, timestamp: Date.now() });
         await db.ref(`rooms/${currentRoomId}/isSpinning`).remove();
         await db.ref(`rooms/${currentRoomId}/spinData`).remove();
         showResult({ winner: winner.name, league: winner.league, username: currentUsername });
-
-        // advance turn and update
         await advanceTurn();
         await updateSpinButtonState();
-
         isSpinning = false;
         spinBtn.disabled = false;
         onSpinFinished();
@@ -643,7 +733,11 @@
       rouletteContainer.style.transition='none';
       rouletteContainer.style.transform='translateX(0px)';
       rouletteContainer.innerHTML='';
-      items.forEach(it => { const d=document.createElement('div'); d.className='roulette-item'; d.innerHTML=`<div>${it.name}</div><div style="font-size:0.7rem;color:#94a3b8;margin-top:4px">${it.league}</div>`; rouletteContainer.appendChild(d); });
+      items.forEach(it => {
+        const d=document.createElement('div'); d.className='roulette-item';
+        d.innerHTML = `<div>${it.name}</div><div style="font-size:0.7rem;color:#94a3b8;margin-top:4px">${it.league}</div>`;
+        rouletteContainer.appendChild(d);
+      });
       void rouletteContainer.offsetHeight;
     }
     function animateToIndex(index,duration){
@@ -693,9 +787,13 @@
       resultPanel.style.display = 'block';
     }
 
-    function onSpinFinished(){ isSpinning = false; if (window.__pendingSettings) { applySettings(window.__pendingSettings); window.__pendingSettings = null; } }
-
-    // host remove function declared earlier: hostRemovePlayer()
+    function onSpinFinished(){
+      isSpinning = false;
+      if (window.__pendingSettings) {
+        applySettings(window.__pendingSettings);
+        window.__pendingSettings = null;
+      }
+    }
 
     async function hostRemovePlayer(targetId) {
       if (!currentRoomId || !isHost) return;
@@ -706,7 +804,6 @@
       } catch(e){ console.warn(e); }
     }
 
-    // leave voluntarily
     async function leaveRoomCleanup(){
       if (!currentRoomId) return;
       try { await db.ref(`rooms/${currentRoomId}/players/${currentPlayerId}`).remove(); } catch(e){}
@@ -718,21 +815,26 @@
       try { db.ref(`rooms/${currentRoomId}/players`).off(); db.ref(`rooms/${currentRoomId}/lastResult`).off(); db.ref(`rooms/${currentRoomId}/isSpinning`).off(); db.ref(`rooms/${currentRoomId}/spinData`).off(); db.ref(`rooms/${currentRoomId}/turnOrder`).off(); db.ref(`rooms/${currentRoomId}/currentTurnIndex`).off(); } catch(e){}
       localStorage.removeItem(KEY_ROOM);
       currentRoomId = '';
-      document.getElementById('loginArea').style.display='block';
-      roomArea.style.display='none';
+      document.getElementById('loginArea').style.display = 'block';
+      roomAreaCard.style.display = 'none';
     }
 
-    // bindings
-    document.getElementById('confirmJoinBtn').addEventListener('click', ()=>{});
+    // UI bindings
     spinBtn.addEventListener('click', () => doSpin());
+    copyRoomBtn.addEventListener('click', () => { if (!currentRoomId) return; navigator.clipboard.writeText(currentRoomId).then(()=> alert('Código copiado!')); });
 
-    // initial state & auto-join
+    // autoload stored username
     const storedName = localStorage.getItem(KEY_NAME);
     if (storedName) usernameInput.value = storedName;
+
+    // auto-join via URL param
     const urlParams = new URLSearchParams(window.location.search);
     const roomParam = urlParams.get('room');
-    if (roomParam && /^\d{6}$/.test(roomParam)) { joinBox.style.display='flex'; joinCodeInput.value = roomParam; }
+    if (roomParam && /^\d{6}$/.test(roomParam)) {
+      joinCodeInput.value = roomParam;
+    }
 
+    // try auto-join stored room (optional)
     (function tryAutoJoinStored(){
       const storedRoom = localStorage.getItem(KEY_ROOM);
       const storedUser = localStorage.getItem(KEY_NAME);
