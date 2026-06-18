@@ -173,7 +173,7 @@
   </div>
 
   <script>
-    // Full JS implementation (Firebase + app logic)
+    // Full JS implementation (Firebase + app logic) with the fix: store the final spinData item in lastResult.
     const firebaseConfig = {
       apiKey: "AIzaSyCjfxIJyKBsg9U_GJu4JP2Taq6fMXiGpMA",
       authDomain: "roleta-ea-fc-cc40c.firebaseapp.com",
@@ -701,25 +701,49 @@
       spinBtnEl.disabled = true;
       resultPanelEl.style.display = 'none';
       await db.ref(`rooms/${currentRoomId}/isSpinning`).set({ playerId: currentPlayerId, username: currentUsername, startTime: Date.now() });
+
       const pool = getActivePool();
       if (pool.length === 0) { alert('Nenhum time disponível'); return; }
       const winnerIndex = Math.floor(Math.random()*pool.length);
       const winner = pool[winnerIndex];
+
       let extended=[];
       for (let i=0;i<4;i++) extended = extended.concat(shuffle([...pool]));
       const targetIndex = Math.min(60, extended.length-10);
       extended[targetIndex] = winner;
+
       const spinData = { items: extended.map(it=>({name:it.name,league:it.league})), targetIndex, duration:5000, startTime:Date.now(), playerId:currentPlayerId, username:currentUsername };
       await db.ref(`rooms/${currentRoomId}/spinData`).set(spinData);
+
       renderSpinItems(spinData.items);
       animateToIndex(spinData.targetIndex, spinData.duration);
+
       setTimeout(async () => {
-        await db.ref(`rooms/${currentRoomId}/lastResult`).set({ winner: winner.name, league: winner.league, username: currentUsername, playerId: currentPlayerId, timestamp: Date.now() });
+        // Use the exact final item from spinData to record the result — ensures visual + stored match
+        const finalItem = (spinData && Array.isArray(spinData.items) && typeof spinData.targetIndex === 'number')
+          ? spinData.items[spinData.targetIndex]
+          : { name: winner.name, league: winner.league };
+
+        await db.ref(`rooms/${currentRoomId}/lastResult`).set({
+          winner: finalItem.name,
+          league: finalItem.league,
+          username: currentUsername,
+          playerId: currentPlayerId,
+          targetIndex: spinData.targetIndex,
+          timestamp: Date.now()
+        });
+
         await db.ref(`rooms/${currentRoomId}/isSpinning`).remove();
         await db.ref(`rooms/${currentRoomId}/spinData`).remove();
-        showResult({ winner: winner.name, league: winner.league, username: currentUsername });
+
+        showResult({ winner: finalItem.name, league: finalItem.league, username: currentUsername });
+
+        // advance turn safely and normalize
         await advanceTurn();
+
+        // update UI state across clients
         await updateSpinButtonState();
+
         isSpinning = false;
         spinBtnEl.disabled = false;
         onSpinFinished();
@@ -826,7 +850,6 @@
     // allow Enter on username to focus code input
     usernameInputEl.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') {
-        // if joinBox hidden, show it; else focus code input
         if (joinBoxEl.style.display === 'none' || joinBoxEl.style.display === '') {
           joinBoxEl.style.display = 'block';
         }
@@ -839,7 +862,6 @@
     const roomParam = urlParams.get('room');
     if (roomParam && /^\d{6}$/.test(roomParam)) {
       joinCodeInputEl.value = roomParam;
-      // auto-open join box for convenience
       joinBoxEl.style.display = 'block';
     }
 
