@@ -1,628 +1,495 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Roleta de Times EA FC 26 - Multiplayer</title>
-    <!-- Firebase -->
-    <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-database-compat.js"></script>
-    <style>
-        :root {
-            --bg-color: #0b0f19;
-            --card-bg: #1e293b;
-            --accent-color: #00f2fe;
-            --accent-gradient: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
-            --text-color: #f8fafc;
-            --border-color: #334155;
-        }
-
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-
-        body {
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
-            padding: 20px;
-        }
-
-        header { text-align: center; margin-bottom: 30px; }
-
-        header h1 {
-            font-size: 2.5rem;
-            background: linear-gradient(to right, #00f2fe, #4facfe, #00ff87);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 10px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        header p { color: #94a3b8; font-size: 1.1rem; }
-
-        .login-modal {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background-color: rgba(0, 0, 0, 0.8); display: flex; justify-content: center; align-items: center; z-index: 1000;
-        }
-
-        .login-modal.hidden { display: none; }
-
-        .login-container {
-            background-color: var(--card-bg); border-radius: 16px; padding: 40px; max-width: 400px; border: 1px solid var(--border-color); text-align: center;
-        }
-
-        .login-container h2 { margin-bottom: 20px; color: var(--accent-color); }
-
-        .login-container input {
-            width: 100%; padding: 12px; margin-bottom: 15px; background-color: #0f172a; color: var(--text-color);
-            border: 1px solid var(--border-color); border-radius: 8px; font-size: 1rem; outline: none;
-        }
-
-        .login-container input:focus { border-color: var(--accent-color); }
-
-        .login-container button {
-            width: 100%; padding: 12px; background: var(--accent-gradient); color: #0f172a; border: none; border-radius: 8px;
-            font-weight: 700; cursor: pointer; font-size: 1rem; text-transform: uppercase;
-        }
-
-        .status-badge { display: inline-block; padding: 5px 12px; background-color: #10b981; color: white; border-radius: 20px; font-size: 0.85rem; margin-top: 10px; }
-
-        .container { width: 100%; max-width: 900px; background-color: var(--card-bg); border-radius: 16px; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 1px solid var(--border-color); }
-
-        .room-info { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid var(--border-color); flex-wrap: wrap; gap: 10px; }
-
-        .room-id { color: #94a3b8; font-size: 0.9rem; }
-        .room-id strong { color: var(--accent-color); }
-        .players-count { background: linear-gradient(135deg, #00f2fe, #4facfe); padding: 8px 16px; border-radius: 20px; color: #0f172a; font-weight: 700; }
-
-        .players-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
-        .player-badge { background-color: #0f172a; border: 1px solid var(--border-color); padding: 8px 12px; border-radius: 6px; font-size: 0.85rem; color: #cbd5e1; }
-        .player-badge.current { border-color: var(--accent-color); color: var(--accent-color); background-color: rgba(0,242,254,0.1); }
-
-        .controls { display: flex; flex-direction: column; gap: 15px; margin-bottom: 30px; }
-        .select-group { display: flex; flex-direction: column; gap: 8px; }
-        label { font-weight: 600; color: #cbd5e1; }
-
-        select {
-            background-color: #0f172a; color: var(--text-color); border: 1px solid var(--border-color); padding: 12px; border-radius: 8px; font-size: 1rem; outline: none;
-        }
-
-        .pool-info { font-size: 0.9rem; color: #00ff87; font-weight: 500; text-align: right; }
-
-        .roulette-wrapper {
-            position: relative; width: 100%; height: 120px; background-color: #0f172a; border-radius: 12px; border: 2px solid var(--border-color);
-            overflow: hidden; margin-bottom: 30px; box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
-        }
-
-        .roulette-wrapper::before {
-            content: ''; position: absolute; left: 50%; top: 0; width: 4px; height: 100%; background-color: #ff0055; z-index: 10; box-shadow: 0 0 12px #ff0055; transform: translateX(-50%);
-        }
-
-        .roulette-container { display: flex; align-items: center; position: absolute; left: 0; top: 0; height: 100%; will-change: transform; }
-        .roulette-item {
-            min-width: 180px; max-width: 180px; height: 80px; background: linear-gradient(145deg, #1e293b, #0f172a); border: 1px solid #334155; border-radius: 8px;
-            display:flex; flex-direction: column; justify-content:center; align-items:center; margin: 0 5px; padding: 10px; text-align:center; font-weight:bold; font-size:0.95rem; color:#e2e8f0; box-shadow:0 4px 6px rgba(0,0,0,0.2);
-        }
-
-        .roulette-item .league-tag { font-size:0.7rem; color:#94a3b8; margin-top:4px; text-transform:uppercase; font-weight:500; }
-
-        .spin-btn {
-            background: var(--accent-gradient); color: #0f172a; border:none; padding: 15px 30px; font-size:1.2rem; font-weight:700; border-radius:8px; cursor:pointer; width:100%; text-transform:uppercase; letter-spacing:1px; box-shadow:0 4px 15px rgba(0,242,254,0.4);
-        }
-
-        .spin-btn:hover:not(:disabled) { box-shadow:0 6px 20px rgba(0,242,254,0.6); }
-        .spin-btn:disabled { background: #475569; color: #94a3b8; cursor:not-allowed; }
-
-        .result-panel {
-            margin-top: 25px; padding: 20px; background: linear-gradient(180deg, rgba(16,185,129,0.1) 0%, rgba(16,185,129,0.0) 100%); border:1px solid rgba(16,185,129,0.3); border-radius:12px; text-align:center; display:none; animation: fadeIn 0.5s ease-out forwards;
-        }
-
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-
-        .result-panel h2 { color:#10b981; text-transform:uppercase; margin-bottom:5px; }
-        .result-panel .team-name { font-size:2.2rem; font-weight:800; color:#fff; }
-        .result-panel .league-name { font-size:1rem; color:#a7f3d0; margin-top:5px; }
-        .result-panel .player-name { font-size:0.9rem; color:#94a3b8; margin-top:10px; }
-
-        .spin-indicator { text-align:center; color:var(--accent-color); font-weight:600; margin-bottom:15px; height:20px; animation: pulse 1.5s infinite; }
-        .spin-indicator.hidden { display:none; }
-
-        .copy-btn { background-color:#334155; color:var(--text-color); border:none; padding:5px 10px; border-radius:4px; cursor:pointer; font-size:0.8rem; margin-left:10px; }
-        .copy-btn:hover { background-color:#475569; }
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Roleta de Times EA FC 26 - Multiplayer</title>
+  <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-database-compat.js"></script>
+  <style>
+    :root{--bg-color:#0b0f19;--card-bg:#1e293b;--accent-color:#00f2fe;--accent-gradient:linear-gradient(135deg,#00f2fe 0%,#4facfe 100%);--text-color:#f8fafc;--border-color:#334155}
+    *{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif}
+    body{background:var(--bg-color);color:var(--text-color);display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:20px}
+    header{text-align:center;margin-bottom:30px}
+    header h1{font-size:2.5rem;background:linear-gradient(to right,#00f2fe,#4facfe,#00ff87);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px}
+    header p{color:#94a3b8;font-size:1.1rem}
+    .login-modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);display:flex;justify-content:center;align-items:center;z-index:1000}
+    .login-modal.hidden{display:none}
+    .login-container{background:var(--card-bg);border-radius:16px;padding:28px;max-width:420px;border:1px solid var(--border-color);text-align:center}
+    .login-container h2{margin-bottom:14px;color:var(--accent-color)}
+    .login-container input{width:100%;padding:10px;margin-bottom:10px;background:#0f172a;color:var(--text-color);border:1px solid var(--border-color);border-radius:8px;font-size:1rem}
+    .btn-row{display:flex;gap:10px}
+    .btn{flex:1;padding:10px;border-radius:8px;border:none;cursor:pointer;font-weight:700;text-transform:uppercase}
+    .btn.create{background:linear-gradient(135deg,#34d399,#60a5fa);color:#06202a}
+    .btn.join{background:var(--accent-gradient);color:#0f172a}
+    .status-badge{display:inline-block;padding:6px 12px;background:#10b981;color:#fff;border-radius:20px;font-size:0.85rem;margin-top:10px}
+    .container{width:100%;max-width:900px;background:var(--card-bg);border-radius:16px;padding:25px;box-shadow:0 10px 30px rgba(0,0,0,0.5);border:1px solid var(--border-color)}
+    .room-info{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding-bottom:15px;border-bottom:1px solid var(--border-color);flex-wrap:wrap;gap:10px}
+    .room-id{color:#94a3b8;font-size:0.95rem}
+    .room-id strong{color:var(--accent-color)}
+    .players-count{background:linear-gradient(135deg,#00f2fe,#4facfe);padding:8px 16px;border-radius:20px;color:#0f172a;font-weight:700}
+    .players-list{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}
+    .player-badge{background:#0f172a;border:1px solid var(--border-color);padding:8px 12px;border-radius:6px;font-size:0.85rem;color:#cbd5e1;display:flex;gap:8px;align-items:center}
+    .player-badge.current{border-color:var(--accent-color);color:var(--accent-color);background:rgba(0,242,254,0.06)}
+    .host-badge{background:#f59e0b;color:#06202a;padding:4px 8px;border-radius:6px;font-weight:700;font-size:0.75rem}
+    .controls{display:flex;flex-direction:column;gap:15px;margin-bottom:20px}
+    label{font-weight:600;color:#cbd5e1}
+    select{background:#0f172a;color:var(--text-color);border:1px solid var(--border-color);padding:10px;border-radius:8px;font-size:1rem}
+    .pool-info{font-size:0.9rem;color:#00ff87;font-weight:500;text-align:right}
+    .share-container{display:flex;gap:10px;align-items:center}
+    .share-btn{background:#334155;color:var(--text-color);border:none;padding:6px 10px;border-radius:6px;cursor:pointer}
+    .roulette-wrapper{position:relative;width:100%;height:120px;background:#0f172a;border-radius:12px;border:2px solid var(--border-color);overflow:hidden;margin-bottom:20px;box-shadow:inset 0 0 20px rgba(0,0,0,0.8)}
+    .roulette-wrapper::before{content:'';position:absolute;left:50%;top:0;width:4px;height:100%;background:#ff0055;z-index:10;box-shadow:0 0 12px #ff0055;transform:translateX(-50%)}
+    .roulette-container{display:flex;align-items:center;position:absolute;left:0;top:0;height:100%;will-change:transform}
+    .roulette-item{min-width:180px;max-width:180px;height:80px;background:linear-gradient(145deg,#1e293b,#0f172a);border:1px solid #334155;border-radius:8px;display:flex;flex-direction:column;justify-content:center;align-items:center;margin:0 5px;padding:10px;text-align:center;font-weight:bold;font-size:0.95rem;color:#e2e8f0;box-shadow:0 4px 6px rgba(0,0,0,0.2)}
+    .league-tag{font-size:0.7rem;color:#94a3b8;margin-top:4px;text-transform:uppercase;font-weight:500}
+    .spin-btn{background:var(--accent-gradient);color:#0f172a;border:none;padding:12px 14px;font-size:1.05rem;font-weight:800;border-radius:8px;cursor:pointer;width:100%;text-transform:uppercase}
+    .spin-indicator{color:var(--accent-color);font-weight:600;margin-bottom:8px;height:22px}
+    .spin-indicator.hidden{display:none}
+    .result-panel{margin-top:12px;padding:16px;background:linear-gradient(180deg,rgba(16,185,129,0.1) 0%,rgba(16,185,129,0) 100%);border:1px solid rgba(16,185,129,0.25);border-radius:10px;text-align:center;display:none}
+    .result-panel .team-name{font-size:2rem;font-weight:800;color:#fff}
+    .copy-btn{background:#334155;color:var(--text-color);border:none;padding:6px 10px;border-radius:6px;cursor:pointer}
+  </style>
 </head>
 <body>
-    <div class="login-modal" id="loginModal">
-        <div class="login-container">
-            <h2>🎮 Roleta EA FC 26</h2>
-            <input type="text" id="usernameInput" placeholder="Seu Nome" />
-            <input type="text" id="roomInput" placeholder="ID da Sala" value="sala-principal" />
-            <button onclick="login()">Entrar</button>
-            <div class="status-badge" id="statusBadge">Conectando...</div>
+  <div class="login-modal" id="loginModal">
+    <div class="login-container">
+      <h2>🎮 Roleta EA FC 26</h2>
+      <input id="usernameInput" placeholder="Seu Nome" />
+      <input id="roomInput" placeholder="ID da Sala (ou deixe em branco para criar)" />
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn create" id="createBtn">Criar Sala</button>
+        <button class="btn join" id="joinBtn">Entrar</button>
+      </div>
+      <div style="margin-top:10px">
+        <div class="status-badge" id="statusBadge">Conectando...</div>
+      </div>
+    </div>
+  </div>
+
+  <header>
+    <h1>Sorteador de Times EA FC 26</h1>
+    <p>Multiplayer em Tempo Real 🌐</p>
+  </header>
+
+  <div class="container" id="mainContainer" style="display:none">
+    <div class="room-info">
+      <div class="room-id">Sala: <strong id="roomDisplay">-</strong></div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div class="players-count" id="playersCount">0 Jogadores</div>
+        <div id="shareLinkContainer" style="display:none" class="share-container">
+          <button class="share-btn" id="shareBtn">📤 Compartilhar Link</button>
+          <button class="copy-btn" id="copyRoomBtn">📋 Copiar</button>
         </div>
+      </div>
     </div>
 
-    <header>
-        <h1>Sorteador de Times EA FC 26</h1>
-        <p>Multiplayer em Tempo Real 🌐</p>
-    </header>
+    <div class="players-list" id="playersList"></div>
 
-    <div class="container" id="mainContainer" style="display:none;">
-        <div class="room-info">
-            <div class="room-id">
-                Sala: <strong id="roomDisplay">-</strong>
-                <button class="copy-btn" onclick="copyRoomLink()">📋 Copiar Link</button>
-            </div>
-            <div class="players-count" id="playersCount">0 Jogadores</div>
-        </div>
-
-        <div class="players-list" id="playersList"></div>
-
-        <div class="controls">
-            <div class="select-group">
-                <label for="leagueSelect">Filtrar por Liga:</label>
-                <select id="leagueSelect">
-                    <option value="all">Todas as Ligas (96 Times)</option>
-                    <option value="premier">Premier League (Inglaterra - 20)</option>
-                    <option value="bundesliga">Bundesliga (Alemanha - 18)</option>
-                    <option value="seriea">Série A (Itália - 20)</option>
-                    <option value="ligue1">Ligue 1 (França - 18)</option>
-                    <option value="laliga">La Liga (Espanha - 20)</option>
-                </select>
-            </div>
-            <div class="pool-info" id="poolInfo">96 times no pool</div>
-        </div>
-
-        <div class="spin-indicator hidden" id="spinIndicator">⏳ Alguém está girando a roleta...</div>
-
-        <div class="roulette-wrapper">
-            <div class="roulette-container" id="rouletteContainer"></div>
-        </div>
-
-        <button class="spin-btn" id="spinBtn">Girar Roleta</button>
-
-        <div class="result-panel" id="resultPanel">
-            <h2>Time Sorteado! 🎯</h2>
-            <div class="team-name" id="resultTeam">-</div>
-            <div class="league-name" id="resultLeague">-</div>
-            <div class="player-name" id="resultPlayer">-</div>
-        </div>
+    <div class="controls">
+      <div>
+        <label for="leagueSelect">Filtrar por Liga:</label>
+        <select id="leagueSelect">
+          <option value="all">Todas as Ligas (96 Times)</option>
+          <option value="premier">Premier League</option>
+          <option value="bundesliga">Bundesliga</option>
+          <option value="seriea">Série A</option>
+          <option value="ligue1">Ligue 1</option>
+          <option value="laliga">La Liga</option>
+        </select>
+      </div>
+      <div class="pool-info" id="poolInfo">96 times no pool</div>
     </div>
 
-    <script>
-        const firebaseConfig = {
-            apiKey: "AIzaSyCjfxIJyKBsg9U_GJu4JP2Taq6fMXiGpMA",
-            authDomain: "roleta-ea-fc-cc40c.firebaseapp.com",
-            databaseURL: "https://roleta-ea-fc-cc40c-default-rtdb.firebaseio.com",
-            projectId: "roleta-ea-fc-cc40c",
-            storageBucket: "roleta-ea-fc-cc40c.firebasestorage.app",
-            messagingSenderId: "394316068027",
-            appId: "1:394316068027:web:39151123593571769b659e"
-        };
+    <div class="spin-indicator hidden" id="spinIndicator">⏳ Alguém está girando a roleta...</div>
 
-        let db;
-        let currentUsername = '';
-        let currentRoomId = '';
-        let currentPlayerId = Math.random().toString(36).substr(2, 9);
-        let currentPool = [];
-        let isSpinning = false;
-        const ITEM_WIDTH = 190;
+    <div class="roulette-wrapper">
+      <div class="roulette-container" id="rouletteContainer"></div>
+    </div>
 
-        // presence-related globals
-        let playerRef = null;          // ref to rooms/{roomId}/players/{playerId}
-        let connectedRef = null;       // ref to .info/connected
-        let onDisconnectRegistered = false;
+    <button class="spin-btn" id="spinBtn">Girar Roleta</button>
 
-        function initFirebase() {
-            const app = firebase.initializeApp(firebaseConfig);
-            db = firebase.database(app);
+    <div class="result-panel" id="resultPanel">
+      <div class="team-name" id="resultTeam">-</div>
+      <div class="league-tag" id="resultLeague">-</div>
+      <div style="margin-top:8px;color:#94a3b8" id="resultPlayer">-</div>
+    </div>
+  </div>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCjfxIJyKBsg9U_GJu4JP2Taq6fMXiGpMA",
+      authDomain: "roleta-ea-fc-cc40c.firebaseapp.com",
+      databaseURL: "https://roleta-ea-fc-cc40c-default-rtdb.firebaseio.com",
+      projectId: "roleta-ea-fc-cc40c",
+      storageBucket: "roleta-ea-fc-cc40c.firebasestorage.app",
+      messagingSenderId: "394316068027",
+      appId: "1:394316068027:web:39151123593571769b659e"
+    };
+
+    let db;
+    let currentUsername = '';
+    let currentRoomId = '';
+    let currentPlayerId = Math.random().toString(36).substr(2,9);
+    let currentPool = [];
+    let isSpinning = false;
+    const ITEM_WIDTH = 190;
+
+    // presence & host vars
+    let playerRef = null;
+    let connectedRef = null;
+    let onDisconnectRegistered = false;
+    let roomHostId = null;
+    let isHost = false;
+    let hostRef = null;
+    let hostOnDisconnectRegistered = false;
+
+    function initFirebase(){
+      const app = firebase.initializeApp(firebaseConfig);
+      db = firebase.database(app);
+    }
+
+    const database = {
+      premier: { name: "Premier League", teams: ["Arsenal","Aston Villa","Bournemouth","Brentford","Brighton","Chelsea","Crystal Palace","Everton","Fulham","Ipswich Town","Leicester City","Liverpool","Manchester City","Manchester United","Newcastle United","Nottingham Forest","Southampton","Tottenham Hotspur","West Ham","Wolverhampton"] },
+      bundesliga: { name: "Bundesliga", teams: ["Bayer Leverkusen","Bayern de Munique","Borussia Dortmund","Borussia Mönchengladbach","Eintracht Frankfurt","FC Augsburg","FC Heidenheim","FC St. Pauli","Holstein Kiel","Mainz 05","RB Leipzig","SC Freiburg","SV Werder Bremen","TSG Hoffenheim","Union Berlin","VfB Stuttgart","VfL Bochum","VfL Wolfsburg"] },
+      seriea: { name: "Série A Itália", teams: ["AC Milan","Atalanta","Bologna","Cagliari","Como","Empoli","Fiorentina","Genoa","Hellas Verona","Inter de Milão","Juventus","Lazio","Lecce","Monza","Napoli","Parma","AS Roma","Torino","Udinese","Venezia"] },
+      ligue1: { name: "Ligue 1 França", teams: ["Angers","Auxerre","Brest","Le Havre","Lens","Lille","Monaco","Montpellier","Nantes","Nice","Olympique de Lyon","Olympique de Marseille","PSG","Reims","Rennes","Saint-Étienne","Strasbourg","Toulouse"] },
+      laliga: { name: "La Liga Espanha", teams: ["Alavés","Athletic Bilbao","Atlético de Madrid","Barcelona","Celta de Vigo","Espanyol","Getafe","Girona","Las Palmas","Leganés","Mallorca","Osasuna","Rayo Vallecano","Real Betis","Real Madrid","Real Sociedad","Sevilla","Valencia","Valladolid","Villarreal"] }
+    };
+
+    // UI elements
+    const loginModal = document.getElementById('loginModal');
+    const mainContainer = document.getElementById('mainContainer');
+    const roomDisplay = document.getElementById('roomDisplay');
+    const shareLinkContainer = document.getElementById('shareLinkContainer');
+    const shareBtn = document.getElementById('shareBtn');
+    const copyRoomBtn = document.getElementById('copyRoomBtn');
+
+    // create room: generate id and mark host
+    function createRoom(){
+      const username = document.getElementById('usernameInput').value.trim();
+      if (!username){ alert('Digite seu nome antes de criar a sala.'); return; }
+      const id = 'sala-' + Math.random().toString(36).substr(2,8);
+      const hostNode = db.ref(`rooms/${id}/host`);
+      hostNode.set({
+        playerId: currentPlayerId,
+        username: username
+      }).then(() => {
+        try{ hostNode.onDisconnect().remove(); hostOnDisconnectRegistered = true; } catch(e){ console.warn('onDisconnect host failed', e); }
+        joinRoom(id, true);
+      }).catch(err => { console.error('Erro ao criar sala', err); alert('Erro ao criar sala. Veja o console.'); });
+    }
+
+    // join room (called for create and normal join)
+    async function joinRoom(roomId, asHost=false){
+      const username = document.getElementById('usernameInput').value.trim();
+      if (!username){ alert('Digite seu nome para entrar na sala.'); return; }
+      currentUsername = username;
+      currentRoomId = roomId;
+
+      // set UI
+      loginModal.classList.add('hidden');
+      mainContainer.style.display = 'block';
+      roomDisplay.textContent = roomId;
+      document.getElementById('statusBadge').textContent = 'Conectado ✅';
+
+      // player ref & presence
+      playerRef = db.ref(`rooms/${roomId}/players/${currentPlayerId}`);
+      connectedRef = db.ref('.info/connected');
+
+      connectedRef.on('value', snap => {
+        if (snap && snap.val() === true){
+          if (!onDisconnectRegistered && playerRef){
+            try{ playerRef.onDisconnect().remove(); } catch(e){ console.warn('onDisconnect player failed', e); }
+            onDisconnectRegistered = true;
+          }
+          if (playerRef) {
+            playerRef.set({ username: currentUsername, joinedAt: firebase.database.ServerValue.TIMESTAMP, online: true }).catch(() => {});
+          }
         }
+      });
 
-        const database = {
-            premier: {
-                name: "Premier League",
-                teams: ["Arsenal", "Aston Villa", "Bournemouth", "Brentford", "Brighton", "Chelsea", "Crystal Palace", "Everton", "Fulham", "Ipswich Town", "Leicester City", "Liverpool", "Manchester City", "Manchester United", "Newcastle United", "Nottingham Forest", "Southampton", "Tottenham Hotspur", "West Ham", "Wolverhampton"]
-            },
-            bundesliga: {
-                name: "Bundesliga",
-                teams: ["Bayer Leverkusen", "Bayern de Munique", "Borussia Dortmund", "Borussia Mönchengladbach", "Eintracht Frankfurt", "FC Augsburg", "FC Heidenheim", "FC St. Pauli", "Holstein Kiel", "Mainz 05", "RB Leipzig", "SC Freiburg", "SV Werder Bremen", "TSG Hoffenheim", "Union Berlin", "VfB Stuttgart", "VfL Bochum", "VfL Wolfsburg"]
-            },
-            seriea: {
-                name: "Série A Itália",
-                teams: ["AC Milan", "Atalanta", "Bologna", "Cagliari", "Como", "Empoli", "Fiorentina", "Genoa", "Hellas Verona", "Inter de Milão", "Juventus", "Lazio", "Lecce", "Monza", "Napoli", "Parma", "AS Roma", "Torino", "Udinese", "Venezia"]
-            },
-            ligue1: {
-                name: "Ligue 1 França",
-                teams: ["Angers", "Auxerre", "Brest", "Le Havre", "Lens", "Lille", "Monaco", "Montpellier", "Nantes", "Nice", "Olympique de Lyon", "Olympique de Marseille", "PSG", "Reims", "Rennes", "Saint-Étienne", "Strasbourg", "Toulouse"]
-            },
-            laliga: {
-                name: "La Liga Espanha",
-                teams: ["Alavés", "Athletic Bilbao", "Atlético de Madrid", "Barcelona", "Celta de Vigo", "Espanyol", "Getafe", "Girona", "Las Palmas", "Leganés", "Mallorca", "Osasuna", "Rayo Vallecano", "Real Betis", "Real Madrid", "Real Sociedad", "Sevilla", "Valencia", "Valladolid", "Villarreal"]
-            }
-        };
+      // hostRef listener: update local state and trigger election if host is null
+      hostRef = db.ref(`rooms/${roomId}/host`);
+      hostRef.on('value', snap => {
+        const v = snap.val();
+        roomHostId = v ? v.playerId : null;
+        isHost = roomHostId === currentPlayerId;
+        shareLinkContainer.style.display = isHost ? 'flex' : 'none';
 
-        function login() {
-            const username = document.getElementById('usernameInput').value.trim();
-            const roomId = document.getElementById('roomInput').value.trim();
-
-            if (!username || !roomId) {
-                alert('Por favor, preencha todos os campos!');
-                return;
-            }
-
-            currentUsername = username;
-            currentRoomId = roomId;
-
-            // referência ao nó do jogador (global)
-            playerRef = db.ref(`rooms/${roomId}/players/${currentPlayerId}`);
-
-            // ref para saber se conectado
-            connectedRef = db.ref('.info/connected');
-
-            // registra onDisconnect quando houver conexão e grava dados do jogador
-            connectedRef.on('value', (snap) => {
-                if (snap && snap.val() === true) {
-                    // registra remoção automática ao desconectar (server-side)
-                    if (!onDisconnectRegistered && playerRef) {
-                        try {
-                            playerRef.onDisconnect().remove();
-                        } catch (e) {
-                            // alguns ambientes podem lançar se onDisconnect não disponível, silenciamos
-                            console.warn('onDisconnect não registrado:', e);
-                        }
-                        onDisconnectRegistered = true;
-                    }
-
-                    // grava (ou atualiza) os dados do jogador enquanto conectado
-                    if (playerRef) {
-                        playerRef.set({
-                            username: currentUsername,
-                            joinedAt: firebase.database.ServerValue.TIMESTAMP,
-                            online: true
-                        }).catch(err => {
-                            console.warn('Erro ao setar playerRef:', err);
-                        });
-                    }
-                } else {
-                    // sem conexão; nada a fazer aqui (onDisconnect do servidor garante remoção)
-                }
-            });
-
-            // listeners em tempo real (players, lastResult, isSpinning)
-            db.ref(`rooms/${roomId}/players`).on('value', (snapshot) => {
-                const players = snapshot.val() || {};
-                updatePlayersList(players);
-            });
-
-            db.ref(`rooms/${roomId}/lastResult`).on('value', (snapshot) => {
-                const result = snapshot.val();
-                if (result) {
-                    showResult({ winner: result.winner || result.winner, league: result.league, username: result.username });
-                }
-            });
-
-            db.ref(`rooms/${roomId}/isSpinning`).on('value', (snapshot) => {
-                const spinning = snapshot.val();
-                if (spinning && spinning.playerId !== currentPlayerId) {
-                    document.getElementById('spinIndicator').classList.remove('hidden');
-                    document.getElementById('spinBtn').disabled = true;
-                } else {
-                    document.getElementById('spinIndicator').classList.add('hidden');
-                    if (!isSpinning) document.getElementById('spinBtn').disabled = false;
-                }
-            });
-
-            // spinData listener para reproduzir animação em observadores
-            setupSpinListener();
-
-            document.getElementById('loginModal').classList.add('hidden');
-            document.getElementById('mainContainer').style.display = 'block';
-            document.getElementById('roomDisplay').textContent = roomId;
-            document.getElementById('statusBadge').textContent = 'Conectado ✅';
-
-            setupStaticRoulette();
-            updatePoolInfo();
+        // if no host present, try to elect one (small randomized delay to reduce collisions)
+        if (!v) {
+          // wait small random ms to reduce simultaneous election attempts
+          setTimeout(() => {
+            electHost();
+          }, Math.floor(Math.random() * 400));
+        } else {
+          // if I became host but haven't registered onDisconnect, register it
+          if (isHost && !hostOnDisconnectRegistered) {
+            try { hostRef.onDisconnect().remove(); hostOnDisconnectRegistered = true; } catch(e) { console.warn('onDisconnect host failed', e); }
+          }
         }
+      });
 
-        function getActivePool() {
-            const selected = document.getElementById('leagueSelect').value;
-            let pool = [];
+      // listeners
+      db.ref(`rooms/${roomId}/players`).on('value', (snapshot) => {
+        const players = snapshot.val() || {};
+        updatePlayersList(players);
+      });
 
-            if (selected === 'all') {
-                Object.keys(database).forEach(key => {
-                    database[key].teams.forEach(team => {
-                        pool.push({ name: team, league: database[key].name });
-                    });
-                });
-            } else {
-                database[selected].teams.forEach(team => {
-                    pool.push({ name: team, league: database[selected].name });
-                });
-            }
-            return pool;
+      db.ref(`rooms/${roomId}/lastResult`).on('value', (snapshot) => {
+        const result = snapshot.val();
+        if (result) showResult({ winner: result.winner, league: result.league, username: result.username });
+      });
+
+      db.ref(`rooms/${roomId}/isSpinning`).on('value', (snapshot) => {
+        const spinning = snapshot.val();
+        if (spinning && spinning.playerId !== currentPlayerId) {
+          document.getElementById('spinIndicator').classList.remove('hidden');
+          document.getElementById('spinBtn').disabled = true;
+        } else {
+          document.getElementById('spinIndicator').classList.add('hidden');
+          if (!isSpinning) document.getElementById('spinBtn').disabled = false;
         }
+      });
 
-        function updatePoolInfo() {
-            currentPool = getActivePool();
-            document.getElementById('poolInfo').textContent = `${currentPool.length} times disponíveis`;
-            setupStaticRoulette();
+      setupSpinListener();
+      setupStaticRoulette();
+      updatePoolInfo();
+    }
+
+    // elect a host if /host is empty. Uses transaction to be safe in concurrent scenarios.
+    async function electHost(){
+      if (!currentRoomId) return;
+      try {
+        const playersSnap = await db.ref(`rooms/${currentRoomId}/players`).get();
+        const players = playersSnap.val() || {};
+        const entries = Object.entries(players);
+        if (entries.length === 0) return; // nothing to elect
+
+        // pick candidate: prefer smallest joinedAt timestamp, fallback to lexicographic id
+        let candidateId = null;
+        let candidateData = null;
+        let minJoined = Infinity;
+        for (const [id, data] of entries) {
+          const joined = data.joinedAt || 0;
+          if (joined && joined < minJoined) {
+            minJoined = joined;
+            candidateId = id;
+            candidateData = data;
+          }
         }
-
-        function setupStaticRoulette() {
-            const container = document.getElementById('rouletteContainer');
-            container.style.transition = 'none';
-            container.style.transform = 'translateX(0px)';
-            container.innerHTML = '';
-
-            const pool = getActivePool();
-            const displayPool = pool.length > 5 ? pool.slice(0, 10) : [...pool, ...pool, ...pool];
-
-            displayPool.forEach(item => {
-                const div = document.createElement('div');
-                div.className = 'roulette-item';
-                div.innerHTML = `<div>${item.name}</div><div class="league-tag">${item.league}</div>`;
-                container.appendChild(div);
-            });
+        if (!candidateId) {
+          // fallback: first id
+          candidateId = entries[0][0];
+          candidateData = entries[0][1];
         }
+        const candidate = { playerId: candidateId, username: candidateData.username || 'Jogador' };
 
-        function shuffle(array) {
-            return array.sort(() => Math.random() - 0.5);
-        }
-
-        function updatePlayersList(players) {
-            const listContainer = document.getElementById('playersList');
-            listContainer.innerHTML = '';
-
-            const playerArray = Object.entries(players).map(([id, data]) => ({ id, ...data }));
-            document.getElementById('playersCount').textContent = `${playerArray.length} Jogador${playerArray.length !== 1 ? 'es' : ''}`;
-
-            playerArray.forEach(player => {
-                const badge = document.createElement('div');
-                badge.className = 'player-badge' + (player.id === currentPlayerId ? ' current' : '');
-                badge.textContent = player.username + (player.id === currentPlayerId ? ' (Você)' : '');
-                listContainer.appendChild(badge);
-            });
-        }
-
-        function showResult(result) {
-            document.getElementById('spinIndicator').classList.add('hidden');
-            document.getElementById('resultTeam').textContent = result.winner || result.winner;
-            document.getElementById('resultLeague').textContent = result.league;
-            document.getElementById('resultPlayer').textContent = `🎯 ${result.username} sorteou`;
-            document.getElementById('resultPanel').style.display = 'block';
-
-            if (!isSpinning) document.getElementById('spinBtn').disabled = false;
-        }
-
-        // spin com gravação de spinData (mantido)
-        function spin() {
-            if (isSpinning) return;
-
-            const spinBtn = document.getElementById('spinBtn');
-            const pool = getActivePool();
-
-            if (pool.length === 0) {
-                alert('Nenhum time disponível!');
-                return;
-            }
-
-            isSpinning = true;
-            spinBtn.disabled = true;
-            document.getElementById('resultPanel').style.display = 'none';
-
-            // marca isSpinning (simples)
-            db.ref(`rooms/${currentRoomId}/isSpinning`).set({
-                playerId: currentPlayerId,
-                username: currentUsername,
-                startTime: new Date().getTime()
-            });
-
-            // escolhe vencedor
-            const winnerIndex = Math.floor(Math.random() * pool.length);
-            const winner = pool[winnerIndex];
-
-            // cria array estendido (ordem que vamos exibir)
-            let extendedItems = [];
-            for (let i = 0; i < 4; i++) extendedItems = extendedItems.concat(shuffle([...pool]));
-
-            // força posição do vencedor
-            const targetPositionIndex = Math.min(60, extendedItems.length - 10);
-            extendedItems[targetPositionIndex] = winner;
-
-            // spinData serializável
-            const spinData = {
-                items: extendedItems.map(it => ({ name: it.name, league: it.league })),
-                targetIndex: targetPositionIndex,
-                duration: 5000,
-                startTime: Date.now(),
-                playerId: currentPlayerId,
-                username: currentUsername
-            };
-
-            // grava spinData para sincronizar animação
-            db.ref(`rooms/${currentRoomId}/spinData`).set(spinData);
-
-            // monta e anima localmente
-            const container = document.getElementById('rouletteContainer');
-            container.style.transition = 'none';
-            container.style.transform = 'translateX(0px)';
-            container.innerHTML = '';
-
-            spinData.items.forEach(item => {
-                const div = document.createElement('div');
-                div.className = 'roulette-item';
-                div.innerHTML = `<div>${item.name}</div><div class="league-tag">${item.league}</div>`;
-                container.appendChild(div);
-            });
-
-            container.offsetHeight; // forçar reflow
-
-            const wrapperWidth = document.querySelector('.roulette-wrapper').offsetWidth;
-            const centerOffset = (wrapperWidth / 2) - (ITEM_WIDTH / 2) - 5;
-            const targetX = -(spinData.targetIndex * ITEM_WIDTH) + centerOffset;
-
-            container.style.transition = `transform ${spinData.duration}ms cubic-bezier(0.15,0.85,0.35,1)`;
-            container.style.transform = `translateX(${targetX}px)`;
-
-            // fim do giro: grava lastResult, limpa isSpinning e spinData
-            setTimeout(() => {
-                db.ref(`rooms/${currentRoomId}/lastResult`).set({
-                    winner: winner.name,
-                    league: winner.league,
-                    username: currentUsername,
-                    playerId: currentPlayerId,
-                    timestamp: Date.now()
-                });
-
-                db.ref(`rooms/${currentRoomId}/isSpinning`).remove();
-                db.ref(`rooms/${currentRoomId}/spinData`).remove();
-
-                showResult({ winner: winner.name, league: winner.league, username: currentUsername });
-                isSpinning = false;
-                spinBtn.disabled = false;
-            }, spinData.duration);
-        }
-
-        function copyRoomLink() {
-            const link = `${window.location.origin}?room=${currentRoomId}`;
-            navigator.clipboard.writeText(link).then(() => alert('Link copiado! 📋'));
-        }
-
-        // Listener que reproduz animação quando spinData é criada por outro jogador
-        function setupSpinListener() {
-            if (!currentRoomId) return;
-            db.ref(`rooms/${currentRoomId}/spinData`).on('value', (snapshot) => {
-                const data = snapshot.val();
-                if (!data) return;
-                if (data.playerId === currentPlayerId) return;
-                playSpinFromData(data);
-            });
-        }
-
-        function playSpinFromData(data) {
-            const container = document.getElementById('rouletteContainer');
-            container.style.transition = 'none';
-            container.style.transform = 'translateX(0px)';
-            container.innerHTML = '';
-
-            data.items.forEach(item => {
-                const div = document.createElement('div');
-                div.className = 'roulette-item';
-                div.innerHTML = `<div>${item.name}</div><div class="league-tag">${item.league}</div>`;
-                container.appendChild(div);
-            });
-
-            container.offsetHeight;
-
-            const wrapperWidth = document.querySelector('.roulette-wrapper').offsetWidth;
-            const centerOffset = (wrapperWidth / 2) - (ITEM_WIDTH / 2) - 5;
-            const targetX = -(data.targetIndex * ITEM_WIDTH) + centerOffset;
-
-            const now = Date.now();
-            const elapsed = Math.max(0, now - data.startTime);
-            const duration = data.duration || 5000;
-            const remaining = Math.max(0, duration - elapsed);
-
-            if (remaining <= 0) {
-                container.style.transition = 'none';
-                container.style.transform = `translateX(${targetX}px)`;
-                return;
-            }
-
-            // inicia animação com tempo restante
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    container.style.transition = `transform ${remaining}ms cubic-bezier(0.15,0.85,0.35,1)`;
-                    container.style.transform = `translateX(${targetX}px)`;
-                });
-            });
-
-            document.getElementById('spinIndicator').classList.remove('hidden');
-            document.getElementById('spinBtn').disabled = true;
-
-            setTimeout(() => {
-                document.getElementById('spinIndicator').classList.add('hidden');
-                if (!isSpinning) document.getElementById('spinBtn').disabled = false;
-            }, remaining + 50);
-        }
-
-        // Remove imediatamente (tentativa antes do onDisconnect do servidor)
-        function leaveRoomImmediately() {
+        // attempt to set host only if current value is null
+        await hostRef.transaction(current => {
+          if (current === null) {
+            return candidate;
+          }
+          return; // abort transaction (someone else set host)
+        }, (error, committed, snapshot) => {
+          if (error) {
+            console.warn('Host transaction failed:', error);
+            return;
+          }
+          if (committed) {
+            // we won the election (or the transaction set our candidate)
+            // set createdAt and register onDisconnect (only the client that committed should do this)
             try {
-                if (playerRef) {
-                    // tenta remover imediatamente (nem sempre conclui em todos os navegadores)
-                    playerRef.remove().catch(() => {});
-                }
+              hostRef.update({ createdAt: firebase.database.ServerValue.TIMESTAMP }).catch(()=>{});
+              // If we (this client) are the new host, register onDisconnect
+              const newHost = snapshot.val();
+              if (newHost && newHost.playerId === currentPlayerId) {
+                try { hostRef.onDisconnect().remove(); hostOnDisconnectRegistered = true; } catch(e){ console.warn('host onDisconnect register failed', e); }
+              }
             } catch (e) {
-                console.warn('Erro ao tentar sair imediatamente:', e);
+              console.warn('Erro pós-transaction host:', e);
             }
-        }
-
-        // Cleanup completo ao trocar de sala / logout
-        function leaveRoomCleanup() {
-            // remove listeners do room atual
-            if (currentRoomId) {
-                try {
-                    db.ref(`rooms/${currentRoomId}/players`).off();
-                    db.ref(`rooms/${currentRoomId}/lastResult`).off();
-                    db.ref(`rooms/${currentRoomId}/isSpinning`).off();
-                    db.ref(`rooms/${currentRoomId}/spinData`).off();
-                } catch (e) { /* ignore */ }
-            }
-
-            // desconecta o connectedRef
-            if (connectedRef) {
-                try { connectedRef.off(); } catch (e) {}
-                connectedRef = null;
-            }
-
-            // cancela onDisconnect e remove o nó se possível
-            if (playerRef) {
-                try {
-                    playerRef.onDisconnect().cancel().catch(() => {});
-                    playerRef.remove().catch(() => {});
-                } catch (e) {
-                    // onDisconnect ou remove podem falhar dependendo do estado de rede
-                }
-                playerRef = null;
-            }
-
-            currentRoomId = '';
-            currentUsername = '';
-            isSpinning = false;
-
-            // volta UI ao estado de login (opcional)
-            document.getElementById('mainContainer').style.display = 'none';
-            document.getElementById('loginModal').classList.remove('hidden');
-            document.getElementById('statusBadge').textContent = 'Conectando...';
-        }
-
-        // tenta limpar ao fechar/recargar a aba
-        window.addEventListener('beforeunload', () => {
-            leaveRoomImmediately();
-            // não chamamos leaveRoomCleanup aqui (pode demorar); onDisconnect do servidor cuidará da remoção
+          }
         });
+      } catch (e) {
+        console.warn('Erro ao eleger host:', e);
+      }
+    }
 
-        // pagehide para Firefox / iOS
-        window.addEventListener('pagehide', () => {
-            leaveRoomImmediately();
-        });
+    function getActivePool(){
+      const selected = document.getElementById('leagueSelect').value;
+      let pool = [];
+      if (selected === 'all') {
+        Object.keys(database).forEach(k => database[k].teams.forEach(t => pool.push({ name: t, league: database[k].name })));
+      } else {
+        database[selected].teams.forEach(t => pool.push({ name: t, league: database[selected].name }));
+      }
+      return pool;
+    }
 
-        // UI bindings
-        document.getElementById('spinBtn').addEventListener('click', spin);
-        document.getElementById('leagueSelect').addEventListener('change', updatePoolInfo);
+    function updatePoolInfo(){ currentPool = getActivePool(); document.getElementById('poolInfo').textContent = `${currentPool.length} times disponíveis`; setupStaticRoulette(); }
+    function setupStaticRoulette(){ const container = document.getElementById('rouletteContainer'); container.style.transition='none'; container.style.transform='translateX(0px)'; container.innerHTML=''; const pool=getActivePool(); const displayPool = pool.length>5?pool.slice(0,10):[...pool,...pool,...pool]; displayPool.forEach(item=>{ const d=document.createElement('div'); d.className='roulette-item'; d.innerHTML=`<div>${item.name}</div><div class="league-tag">${item.league}</div>`; container.appendChild(d); }); }
+    function shuffle(array){ return array.sort(()=>Math.random()-0.5); }
 
-        document.getElementById('usernameInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') login(); });
-        document.getElementById('roomInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') login(); });
+    function updatePlayersList(players){
+      const listContainer = document.getElementById('playersList');
+      listContainer.innerHTML = '';
+      const playerArray = Object.entries(players || {}).map(([id,data]) => ({ id, ...data }));
+      document.getElementById('playersCount').textContent = `${playerArray.length} Jogador${playerArray.length!==1 ? 'es' : ''}`;
+      playerArray.forEach(player => {
+        const badge = document.createElement('div');
+        badge.className = 'player-badge' + (player.id === currentPlayerId ? ' current' : '');
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = player.username + (player.id === currentPlayerId ? ' (Você)' : '');
+        badge.appendChild(nameSpan);
+        if (player.id === roomHostId){
+          const hb = document.createElement('span');
+          hb.className = 'host-badge';
+          hb.textContent = 'Host';
+          badge.appendChild(hb);
+        }
+        listContainer.appendChild(badge);
+      });
+    }
 
-        const urlParams = new URLSearchParams(window.location.search);
-        const roomFromURL = urlParams.get('room');
-        if (roomFromURL) document.getElementById('roomInput').value = roomFromURL;
+    function showResult(result){
+      document.getElementById('spinIndicator').classList.add('hidden');
+      document.getElementById('resultTeam').textContent = result.winner || '-';
+      document.getElementById('resultLeague').textContent = result.league || '-';
+      document.getElementById('resultPlayer').textContent = `🎯 ${result.username} sorteou`;
+      document.getElementById('resultPanel').style.display = 'block';
+      if (!isSpinning) document.getElementById('spinBtn').disabled = false;
+    }
 
-        initFirebase();
-    </script>
+    // spin implementation with spinData (same as before)
+    function spin(){
+      if (isSpinning) return;
+      const spinBtn = document.getElementById('spinBtn');
+      const pool = getActivePool();
+      if (pool.length === 0){ alert('Nenhum time disponível!'); return; }
+      isSpinning = true; spinBtn.disabled = true; document.getElementById('resultPanel').style.display = 'none';
+      db.ref(`rooms/${currentRoomId}/isSpinning`).set({ playerId: currentPlayerId, username: currentUsername, startTime: Date.now() });
+      const winnerIndex = Math.floor(Math.random()*pool.length);
+      const winner = pool[winnerIndex];
+      let extendedItems = [];
+      for (let i=0;i<4;i++) extendedItems = extendedItems.concat(shuffle([...pool]));
+      const targetPositionIndex = Math.min(60, extendedItems.length - 10);
+      extendedItems[targetPositionIndex] = winner;
+      const spinData = { items: extendedItems.map(it=>({name:it.name, league:it.league})), targetIndex: targetPositionIndex, duration:5000, startTime:Date.now(), playerId:currentPlayerId, username:currentUsername };
+      db.ref(`rooms/${currentRoomId}/spinData`).set(spinData);
+      const container = document.getElementById('rouletteContainer'); container.style.transition='none'; container.style.transform='translateX(0px)'; container.innerHTML='';
+      spinData.items.forEach(item=>{ const d=document.createElement('div'); d.className='roulette-item'; d.innerHTML=`<div>${item.name}</div><div class="league-tag">${item.league}</div>`; container.appendChild(d); });
+      container.offsetHeight;
+      const wrapperWidth = document.querySelector('.roulette-wrapper').offsetWidth;
+      const centerOffset = (wrapperWidth/2) - (ITEM_WIDTH/2) - 5;
+      const targetX = -(spinData.targetIndex * ITEM_WIDTH) + centerOffset;
+      container.style.transition = `transform ${spinData.duration}ms cubic-bezier(0.15,0.85,0.35,1)`;
+      container.style.transform = `translateX(${targetX}px)`;
+      setTimeout(() => {
+        db.ref(`rooms/${currentRoomId}/lastResult`).set({ winner: winner.name, league: winner.league, username: currentUsername, playerId: currentPlayerId, timestamp: Date.now() });
+        db.ref(`rooms/${currentRoomId}/isSpinning`).remove();
+        db.ref(`rooms/${currentRoomId}/spinData`).remove();
+        showResult({ winner: winner.name, league: winner.league, username: currentUsername });
+        isSpinning = false; spinBtn.disabled = false;
+      }, spinData.duration);
+    }
+
+    function setupSpinListener(){
+      if (!currentRoomId) return;
+      db.ref(`rooms/${currentRoomId}/spinData`).on('value', snapshot => {
+        const data = snapshot.val();
+        if (!data) return;
+        if (data.playerId === currentPlayerId) return;
+        playSpinFromData(data);
+      });
+    }
+
+    function playSpinFromData(data){
+      const container = document.getElementById('rouletteContainer');
+      container.style.transition='none'; container.style.transform='translateX(0px)'; container.innerHTML='';
+      data.items.forEach(item=>{ const d=document.createElement('div'); d.className='roulette-item'; d.innerHTML=`<div>${item.name}</div><div class="league-tag">${item.league}</div>`; container.appendChild(d); });
+      container.offsetHeight;
+      const wrapperWidth = document.querySelector('.roulette-wrapper').offsetWidth;
+      const centerOffset = (wrapperWidth/2) - (ITEM_WIDTH/2) - 5;
+      const targetX = -(data.targetIndex * ITEM_WIDTH) + centerOffset;
+      const now = Date.now();
+      const elapsed = Math.max(0, now - data.startTime);
+      const duration = data.duration || 5000;
+      const remaining = Math.max(0, duration - elapsed);
+      if (remaining <= 0){ container.style.transition='none'; container.style.transform=`translateX(${targetX}px)`; return; }
+      requestAnimationFrame(()=>{ requestAnimationFrame(()=>{ container.style.transition = `transform ${remaining}ms cubic-bezier(0.15,0.85,0.35,1)`; container.style.transform = `translateX(${targetX}px)`; }); });
+      document.getElementById('spinIndicator').classList.remove('hidden'); document.getElementById('spinBtn').disabled = true;
+      setTimeout(()=>{ document.getElementById('spinIndicator').classList.add('hidden'); if (!isSpinning) document.getElementById('spinBtn').disabled = false; }, remaining+50);
+    }
+
+    // presence: try immediate remove
+    function leaveRoomImmediately(){
+      try{ if (playerRef) playerRef.remove().catch(()=>{}); } catch(e){ console.warn(e); }
+    }
+
+    // cleanup when leaving / logout
+    function leaveRoomCleanup(){
+      if (currentRoomId){
+        try{ db.ref(`rooms/${currentRoomId}/players`).off(); db.ref(`rooms/${currentRoomId}/lastResult`).off(); db.ref(`rooms/${currentRoomId}/isSpinning`).off(); db.ref(`rooms/${currentRoomId}/spinData`).off(); } catch(e){}
+      }
+      if (connectedRef){ try{ connectedRef.off(); } catch(e){} connectedRef = null; }
+      if (playerRef){
+        try{ playerRef.onDisconnect().cancel().catch(()=>{}); playerRef.remove().catch(()=>{}); } catch(e){}
+        playerRef = null;
+      }
+      // if I'm host and leaving voluntarily, remove host node so election runs
+      if (isHost && hostRef){
+        try{ hostRef.onDisconnect().cancel().catch(()=>{}); hostRef.remove().catch(()=>{}); } catch(e){}
+        hostOnDisconnectRegistered = false;
+      }
+      if (hostRef){
+        try{ hostRef.off(); hostRef = null; } catch(e){}
+      }
+      currentRoomId = ''; currentUsername = ''; isSpinning = false; roomHostId = null; isHost = false;
+      document.getElementById('mainContainer').style.display = 'none';
+      loginModal.classList.remove('hidden');
+      document.getElementById('statusBadge').textContent = 'Conectando...';
+    }
+
+    window.addEventListener('beforeunload', () => { leaveRoomImmediately(); });
+    window.addEventListener('pagehide', () => { leaveRoomImmediately(); });
+
+    // share handlers
+    function copyRoomLink(){
+      const link = `${window.location.origin}${window.location.pathname}?room=${currentRoomId}`;
+      navigator.clipboard.writeText(link).then(()=> alert('Link copiado! 📋'));
+    }
+    function shareLink(){
+      const link = `${window.location.origin}${window.location.pathname}?room=${currentRoomId}`;
+      if (navigator.share){
+        navigator.share({ title: 'Convite: Roleta EA FC 26', text: 'Venha jogar!', url: link }).catch(()=>{ copyRoomLink(); });
+      } else {
+        copyRoomLink();
+      }
+    }
+
+    // bindings
+    document.getElementById('createBtn').addEventListener('click', createRoom);
+    document.getElementById('joinBtn').addEventListener('click', () => {
+      const roomId = document.getElementById('roomInput').value.trim();
+      if (!roomId){ alert('Preencha o ID da sala ou clique em Criar Sala.'); return; }
+      db.ref(`rooms/${roomId}`).get().then(snap => { joinRoom(roomId, false); }).catch(err => { console.error(err); alert('Erro ao entrar na sala'); });
+    });
+
+    document.getElementById('spinBtn').addEventListener('click', spin);
+    document.getElementById('leagueSelect').addEventListener('change', updatePoolInfo);
+    document.getElementById('usernameInput').addEventListener('keypress', (e)=>{ if (e.key==='Enter'){ const rid = document.getElementById('roomInput').value.trim(); if (rid) joinRoom(rid,false); }});
+    document.getElementById('roomInput').addEventListener('keypress', (e)=>{ if (e.key==='Enter'){ const rid = document.getElementById('roomInput').value.trim(); if (rid) joinRoom(rid,false); }});
+    shareBtn.addEventListener('click', shareLink);
+    copyRoomBtn.addEventListener('click', copyRoomLink);
+
+    // auto-fill room from query
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomFromURL = urlParams.get('room');
+    if (roomFromURL) document.getElementById('roomInput').value = roomFromURL;
+
+    initFirebase();
+  </script>
 </body>
 </html>
