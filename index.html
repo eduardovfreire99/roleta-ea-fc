@@ -495,12 +495,25 @@
       connectedRef.on('value', snap => {
         if (snap && snap.val() === true) {
           if (!onDisconnectRegistered && playerRef) {
-            try { playerRef.onDisconnect().remove(); } catch(e){ console.warn(e); }
+            try {
+              // don't remove the player node on disconnect — mark as offline/inactive instead
+              playerRef.onDisconnect().update({
+                online: false,
+                active: false,
+                lastSeen: firebase.database.ServerValue.TIMESTAMP
+              });
+            } catch(e) { console.warn(e); }
             onDisconnectRegistered = true;
           }
           if (playerRef) {
             const activeNow = document.visibilityState === 'visible';
-            playerRef.set({ username: currentUsername, joinedAt: firebase.database.ServerValue.TIMESTAMP, online:true, active:activeNow }).catch(()=>{});
+            // keep the player node and update presence fields
+            playerRef.set({
+              username: currentUsername,
+              joinedAt: firebase.database.ServerValue.TIMESTAMP,
+              online: true,
+              active: activeNow
+            }).catch(()=>{});
           }
         }
       });
