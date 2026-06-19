@@ -63,7 +63,6 @@
     .roulette-wrapper{ margin-top:14px; position:relative; height:120px; border-radius:10px; background:#0f172a; overflow:hidden; border:2px solid var(--border) }
     .roulette-wrapper::before{ content:''; position:absolute; left:50%; top:0; width:4px; height:100%; background:#ff0055; transform:translateX(-50%); z-index:10 }
     .roulette-container{ position:absolute; left:0; top:0; height:100%; display:flex; align-items:center; will-change:transform }
-    /* ensure item width is consistent; use this as baseline but JS measures actual width */
     .roulette-item{ min-width:180px; height:80px; margin:0 5px; background:linear-gradient(145deg,#1e293b,#0f172a); border-radius:8px; border:1px solid #334155; display:flex; flex-direction:column; justify-content:center; align-items:center; font-weight:700; color:#e2e8f0 }
 
     .controls{ margin-top:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap }
@@ -174,7 +173,9 @@
   </div>
 
   <script>
-    /* FULL JS with dynamic item width calculations to ensure visual center matches saved result */
+    /* Full JS with host-transfer-on-leave and safe room delete only when empty.
+       Also keeps previous fixes: dynamic item width, lastResult from spinData.items[targetIndex], etc.
+    */
     const firebaseConfig = {
       apiKey: "AIzaSyCjfxIJyKBsg9U_GJu4JP2Taq6fMXiGpMA",
       authDomain: "roleta-ea-fc-cc40c.firebaseapp.com",
@@ -206,10 +207,11 @@
     let isHost = false;
     let hostOnDisconnectRegistered = false;
     let settingsRef = null;
+    const GRACE_MS = 15000;
 
     let latestTurnOrder = [];
 
-    // DOM
+    // DOM refs
     const usernameInputEl = document.getElementById('usernameInput');
     const createBtnEl = document.getElementById('createBtn');
     const showJoinBtnEl = document.getElementById('showJoinBtn');
@@ -293,7 +295,6 @@
 
     function computeCenterOffset(itemFullWidth) {
       const wrapperWidth = document.querySelector('.roulette-wrapper').offsetWidth;
-      // center offset so that index * itemFullWidth positions that item centered
       return (wrapperWidth - itemFullWidth) / 2;
     }
 
@@ -305,7 +306,6 @@
       rouletteContainerEl.style.transform = `translateX(${targetX}px)`;
     }
 
-    // render items and immediately measure actual widths
     function renderSpinItems(items){
       rouletteContainerEl.style.transition='none';
       rouletteContainerEl.style.transform='translateX(0px)';
@@ -316,7 +316,6 @@
         d.innerHTML = `<div>${it.name}</div><div style="font-size:0.7rem;color:#94a3b8;margin-top:4px">${it.league}</div>`;
         rouletteContainerEl.appendChild(d);
       });
-      // force reflow so measurements are up-to-date
       void rouletteContainerEl.offsetHeight;
     }
 
@@ -379,7 +378,56 @@
       updateSpinButtonState().catch(()=>{});
     });
 
-    async function removeFromTurnOrderAndNormalize(playerId) {
+    // central: when a player node is removed, we update turnOrder and if the removed player was the host, transfer host or remove room
+    function listenForPlayerRemoved(roomId) {
+      const playersRef = db.ref(`rooms/${roomId}/players`);
+      playersRef.on('child_removed', async (snap) => {
+        const removedId = snap.key;
+        // remove from turn order and normalize
+        await removeFromTurnOrderAndNormalize(removedId);
+        await updateSpinButtonState();
+
+        // fetch remaining players
+        const playersSnap = await db.ref(`rooms/${roomId}/players`).get();
+        const playersObj = playersSnap.val() || {};
+        const remainingIds = Object.keys(playersObj);
+
+        // if the removed player was the host, transfer host to another player or remove room if none left
+        const hostSnap = await db.ref(`rooms/${roomId}/host`).get();
+        const hostVal = hostSnap.val();
+        const currentHostId = hostVal ? hostVal.playerId : null;
+
+        if (removedId === currentHostId) {
+          if (remainingIds.length > 0) {
+            // choose new host: prefer first id in current turnOrder if present, otherwise first remaining id
+            const orderSnap = await db.ref(`rooms/${roomId}/turnOrder`).get();
+            const order = orderSnap.val() || [];
+            let newHostId = null;
+            // try to pick first id from order that is still present
+            for (let id of order) {
+              if (id && playersObj[id]) { newHostId = id; break; }
+            }
+            if (!newHostId) newHostId = remainingIds[0];
+
+            const newHostUsername = playersObj[newHostId].username || 'Host';
+            const newHostOnline = !!playersObj[newHostId].online;
+            await db.ref(`rooms/${roomId}/host`).set({ playerId: newHostId, username: newHostUsername, online: newHostOnline, transferredAt: Date.now() });
+            // no explicit onDisconnect here — the new host client will detect hostRef and register onDisconnect
+          } else {
+            // no players left — remove room
+            try { await db.ref(`rooms/${roomId}`).remove(); } catch(e) { console.warn('remove room failed', e); }
+          }
+        }
+
+        // If the removed player was the current client, and they were kicked/removed, do cleanup UI
+        if (removedId === currentPlayerId && currentRoomId === roomId) {
+          alert('Você foi removido da sala ou desconectado. Voltando à tela inicial.');
+          cleanupLocalAfterRemoval();
+        }
+      });
+    }
+
+    async function removeFromTurnOrderAndNormalize(playerId){
       if (!currentRoomId) return;
       await db.ref(`rooms/${currentRoomId}/turnOrder`).transaction(current => {
         if (!current || !Array.isArray(current)) return current;
@@ -389,7 +437,7 @@
         if (!room) return room;
         const order = room.turnOrder || [];
         if (!Array.isArray(order) || order.length === 0) { room.currentTurnIndex = 0; return room; }
-        if (!room.currentTurnIndex && room.currentTurnIndex !== 0) room.currentTurnIndex = 0;
+        if (room.currentTurnIndex === undefined || room.currentTurnIndex === null) room.currentTurnIndex = 0;
         if (room.currentTurnIndex >= order.length) room.currentTurnIndex = room.currentTurnIndex % order.length;
         return room;
       });
@@ -418,7 +466,6 @@
         const orderSnap = await db.ref(`rooms/${currentRoomId}/turnOrder`).get();
         const order = orderSnap.val() || [];
         if (!Array.isArray(order) || order.length < 1) { spinBtnEl.disabled = true; updateTurnBanner(false, 'Ordem inválida'); return; }
-
         const idxSnap = await db.ref(`rooms/${currentRoomId}/currentTurnIndex`).get();
         const idx = idxSnap.exists() ? idxSnap.val() : 0;
         const currentPid = order[idx % order.length];
@@ -461,46 +508,37 @@
     async function advanceTurn() {
       if (!currentRoomId) return;
       const idxRef = db.ref(`rooms/${currentRoomId}/currentTurnIndex`);
-      await idxRef.transaction(current => {
-        if (current === null || current === undefined) return 0;
-        return current + 1;
-      });
+      await idxRef.transaction(current => { if (current === null || current === undefined) return 0; return current + 1; });
       const orderSnap = await db.ref(`rooms/${currentRoomId}/turnOrder`).get();
       const order = orderSnap.val() || [];
       if (!Array.isArray(order) || order.length === 0) { await idxRef.set(0); }
       else { const idxSnap = await idxRef.get(); const val = idxSnap.exists() ? idxSnap.val() : 0; await idxRef.set(val % order.length); }
     }
 
-    // CREATE ROOM
+    // CREATE ROOM (do NOT register db.ref(...).onDisconnect().remove() here)
     createBtnEl.addEventListener('click', async () => {
       const name = usernameInputEl.value.trim();
       if (!name) { alert('Digite seu nome antes de criar a sala.'); return; }
-      currentUsername = name;
-      localStorage.setItem(KEY_NAME, name);
-      createBtnEl.disabled = true;
+      currentUsername = name; localStorage.setItem(KEY_NAME, name); createBtnEl.disabled = true;
       try {
         const code = await generateUniqueRoomCode();
         const hostNode = db.ref(`rooms/${code}/host`);
         const hostObj = { playerId: currentPlayerId, username: currentUsername, online: true, createdAt: firebase.database.ServerValue.TIMESTAMP };
         await hostNode.set(hostObj);
-        try { db.ref(`rooms/${code}`).onDisconnect().remove(); } catch(e){}
-        await db.ref(`rooms/${code}/settings`).set({ league: 'all' });
+        // do NOT call db.ref(`rooms/${code}`).onDisconnect().remove(); — we want room to persist until empty or host intentionally leaves
+        await db.ref(`rooms/${code}/settings`).set({ league:'all' });
         await db.ref(`rooms/${code}/turnOrder`).set([currentPlayerId]);
         await db.ref(`rooms/${code}/currentTurnIndex`).set(0);
         localStorage.setItem(KEY_ROOM, code);
         await enterRoom(code, true);
-      } catch (err) {
-        console.error(err);
-        alert('Erro ao criar sala. Tente novamente.');
-        createBtnEl.disabled = false;
-      }
+      } catch(e){ console.error(e); alert('Erro ao criar sala'); createBtnEl.disabled = false; }
     });
 
-    // showJoinBtn: if code already present and valid -> join directly, else toggle join box
+    // show/hide join or direct-join if code present
     showJoinBtnEl.addEventListener('click', async () => {
       const code = (joinCodeInputEl.value || '').trim();
       if (/^\d{6}$/.test(code)) {
-        // attempt direct join
+        // try direct join
         try {
           const roomSnap = await db.ref(`rooms/${code}`).get();
           if (!roomSnap.exists()) { alert('Sala não encontrada.'); return; }
@@ -508,30 +546,22 @@
           const hostVal = hostSnap.val();
           if (!hostVal || hostVal.online !== true) { alert('Sala sem host disponível.'); return; }
           currentUsername = usernameInputEl.value.trim();
-          if (!currentUsername) { alert('Digite seu nome para entrar.'); return; }
+          if (!currentUsername) { alert('Digite seu nome.'); return; }
           localStorage.setItem(KEY_NAME, currentUsername);
           localStorage.setItem(KEY_ROOM, code);
           await enterRoom(code, false);
-        } catch (e) {
-          console.error(e);
-          alert('Erro ao entrar — verifique o código e tente novamente.');
-        }
+        } catch(e){ console.error(e); alert('Erro ao entrar'); }
         return;
       }
-
       // toggle join box
-      if (joinBoxEl.style.display === 'none' || joinBoxEl.style.display === '') {
-        joinBoxEl.style.display = 'block';
-        joinCodeInputEl.focus();
-      } else {
-        joinBoxEl.style.display = 'none';
-      }
+      joinBoxEl.style.display = (joinBoxEl.style.display === 'none' || joinBoxEl.style.display === '') ? 'block' : 'none';
+      if (joinBoxEl.style.display === 'block') joinCodeInputEl.focus();
     });
 
-    // confirm join button (same behavior as direct join)
+    // confirm join
     confirmJoinBtnEl.addEventListener('click', async () => {
       const code = (joinCodeInputEl.value || '').trim();
-      if (!/^\d{6}$/.test(code)) { alert('Código inválido — use 6 dígitos.'); return; }
+      if (!/^\d{6}$/.test(code)) { alert('Código inválido — 6 dígitos'); return; }
       try {
         const roomSnap = await db.ref(`rooms/${code}`).get();
         if (!roomSnap.exists()) { alert('Sala não encontrada.'); return; }
@@ -539,52 +569,21 @@
         const hostVal = hostSnap.val();
         if (!hostVal || hostVal.online !== true) { alert('Sala sem host disponível.'); return; }
         currentUsername = usernameInputEl.value.trim();
-        if (!currentUsername) { alert('Digite seu nome para entrar.'); return; }
+        if (!currentUsername) { alert('Digite seu nome.'); return; }
         localStorage.setItem(KEY_NAME, currentUsername);
         localStorage.setItem(KEY_ROOM, code);
         await enterRoom(code, false);
-      } catch (e) {
-        console.error(e);
-        alert('Erro ao entrar — verifique o código e tente novamente.');
-      }
+      } catch(e){ console.error(e); alert('Erro ao entrar'); }
     });
 
-    // allow Enter key on the joinCodeInput to trigger join
-    joinCodeInputEl.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        confirmJoinBtnEl.click();
-      }
-    });
-
-    // listener for player removed
-    function listenForPlayerRemoved(roomId) {
-      const playersRef = db.ref(`rooms/${roomId}/players`);
-      playersRef.on('child_removed', async (snap) => {
-        const removedId = snap.key;
-        await removeFromTurnOrderAndNormalize(removedId);
-        await updateSpinButtonState();
-        if (removedId === currentPlayerId && currentRoomId === roomId) {
-          alert('Você foi removido da sala pelo host ou desconectado. Voltando à tela inicial.');
-          cleanupLocalAfterRemoval();
-        }
-      });
-    }
-
-    function cleanupLocalAfterRemoval(){
-      try { db.ref(`rooms/${currentRoomId}/players/${currentPlayerId}`).off(); } catch(e){}
-      localStorage.removeItem(KEY_ROOM);
-      currentRoomId = '';
-      document.getElementById('loginArea').style.display = 'block';
-      roomCardEl.style.display = 'none';
-    }
-
-    // enterRoom implementation
+    // enterRoom
     async function enterRoom(code, createdAsHost=false) {
-      document.getElementById('loginArea').style.display = 'none';
-      roomCardEl.style.display = 'block';
+      document.getElementById('loginArea').style.display='none';
+      roomCardEl.style.display='block';
       roomDisplayEl.textContent = code;
       currentRoomId = code;
 
+      // listen for player removed and host-transfer logic
       listenForPlayerRemoved(code);
 
       playerRef = db.ref(`rooms/${code}/players/${currentPlayerId}`);
@@ -593,7 +592,10 @@
       connectedRef.on('value', snap => {
         if (snap && snap.val() === true) {
           if (!onDisconnectRegistered && playerRef) {
-            try { playerRef.onDisconnect().remove(); } catch(e){ console.warn(e); }
+            try {
+              // remove player node when connection lost (full close)
+              playerRef.onDisconnect().remove();
+            } catch(e){ console.warn('player onDisconnect remove failed', e); }
             onDisconnectRegistered = true;
           }
           if (playerRef) {
@@ -612,13 +614,13 @@
         hostStatusEl.textContent = v ? `${v.username} (host) — ${v.online ? 'ativo' : 'ausente'}` : 'Sem host';
         if (isHost) {
           try {
+            // ensure host node is marked online and register onDisconnect to set host offline (do NOT remove whole room)
             hostRef.update({ online:true, username: currentUsername }).catch(()=>{});
             if (!hostOnDisconnectRegistered) {
               hostRef.onDisconnect().update({ online:false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
               hostOnDisconnectRegistered = true;
             }
-            try { db.ref(`rooms/${code}`).onDisconnect().remove(); } catch(e){}
-          } catch(e){}
+          } catch(e){ console.warn(e); }
         }
         updateSpinButtonState().catch(()=>{});
       });
@@ -631,6 +633,7 @@
         updateSpinButtonState().catch(()=>{});
       });
 
+      // ensure in turnOrder
       db.ref(`rooms/${code}/turnOrder`).transaction(current => {
         if (!current) return [currentPlayerId];
         if (!Array.isArray(current)) return [currentPlayerId];
@@ -664,6 +667,7 @@
       };
       leaveBtnEl.onclick = leaveRoomCleanup;
 
+      // If my own player node disappears (kicked), cleanup locally
       db.ref(`rooms/${code}/players/${currentPlayerId}`).on('value', snap => {
         if (!snap.exists() && currentRoomId === code) {
           setTimeout(() => {
@@ -674,6 +678,14 @@
           }, 100);
         }
       });
+    }
+
+    function cleanupLocalAfterRemoval(){
+      try { db.ref(`rooms/${currentRoomId}/players/${currentPlayerId}`).off(); } catch(e){}
+      localStorage.removeItem(KEY_ROOM);
+      currentRoomId = '';
+      document.getElementById('loginArea').style.display='block';
+      roomCardEl.style.display='none';
     }
 
     function renderPlayers(players) {
@@ -734,6 +746,7 @@
       }).catch(()=>{ turnInfoEl.textContent = ''; });
     }
 
+    // Spin flow (same as before), store finalItem from spinData
     async function doSpin(){
       if (!currentRoomId) return;
       if (isSpinning) return;
@@ -753,6 +766,7 @@
       const idx = idxSnap.exists() ? idxSnap.val() : 0;
       const currentPid = order[idx % (order.length || 1)];
       if (currentPid !== currentPlayerId) { alert('Não é a sua vez de girar.'); return; }
+
       isSpinning = true;
       spinBtnEl.disabled = true;
       resultPanelEl.style.display = 'none';
@@ -772,11 +786,9 @@
       await db.ref(`rooms/${currentRoomId}/spinData`).set(spinData);
 
       renderSpinItems(spinData.items);
-      // animate using measured widths
       animateToIndex(spinData.targetIndex, spinData.duration);
 
       setTimeout(async () => {
-        // Use the exact final item from spinData to record the result — ensures visual + stored match
         const finalItem = (spinData && Array.isArray(spinData.items) && typeof spinData.targetIndex === 'number')
           ? spinData.items[spinData.targetIndex]
           : { name: winner.name, league: winner.league };
@@ -804,48 +816,6 @@
       }, spinData.duration);
     }
 
-    function renderSpinItems(items){
-      rouletteContainerEl.style.transition='none';
-      rouletteContainerEl.style.transform='translateX(0px)';
-      rouletteContainerEl.innerHTML='';
-      items.forEach(it => {
-        const d=document.createElement('div'); d.className='roulette-item';
-        d.innerHTML = `<div>${it.name}</div><div style="font-size:0.7rem;color:#94a3b8;margin-top:4px">${it.league}</div>`;
-        rouletteContainerEl.appendChild(d);
-      });
-      void rouletteContainerEl.offsetHeight;
-    }
-
-    function setupSpinListener(){
-      if (!currentRoomId) return;
-      db.ref(`rooms/${currentRoomId}/spinData`).on('value', snap => {
-        const d = snap.val();
-        if (!d) return;
-        if (d.playerId === currentPlayerId) return;
-        renderSpinItems(d.items);
-        const now = Date.now();
-        const elapsed = Math.max(0, now - d.startTime);
-        const remaining = Math.max(0, (d.duration || 5000) - elapsed);
-        const itemFullWidth = getItemFullWidth();
-        const centerOffset = computeCenterOffset(itemFullWidth);
-        const targetX = -(d.targetIndex * itemFullWidth) + centerOffset;
-
-        if (remaining <= 0) {
-          rouletteContainerEl.style.transition='none';
-          rouletteContainerEl.style.transform = `translateX(${targetX}px)`;
-          onSpinFinished();
-          return;
-        }
-        requestAnimationFrame(()=>requestAnimationFrame(()=> {
-          rouletteContainerEl.style.transition = `transform ${remaining}ms cubic-bezier(0.15,0.85,0.35,1)`;
-          rouletteContainerEl.style.transform = `translateX(${targetX}px)`;
-        }));
-        spinIndicatorEl.style.display='block';
-        spinBtnEl.disabled = true;
-        setTimeout(()=>{ spinIndicatorEl.style.display='none'; if (!isSpinning) spinBtnEl.disabled=false; onSpinFinished(); }, remaining + 50);
-      });
-    }
-
     function showResult(r){
       resultTeamEl.textContent = r.winner || '-';
       resultLeagueEl.textContent = r.league || '-';
@@ -861,30 +831,73 @@
       }
     }
 
+    // Host removes a player
     async function hostRemovePlayer(targetId) {
       if (!currentRoomId || !isHost) return;
       try {
         await db.ref(`rooms/${currentRoomId}/players/${targetId}`).remove();
         await removeFromTurnOrderAndNormalize(targetId);
         await updateSpinButtonState();
-      } catch(e){ console.warn(e); }
+      } catch(e){ console.warn('hostRemovePlayer err', e); }
     }
 
+    // Leave room cleanup — now transfers host if needed instead of always removing room
     async function leaveRoomCleanup(){
       if (!currentRoomId) return;
-      try { await db.ref(`rooms/${currentRoomId}/players/${currentPlayerId}`).remove(); } catch(e){}
-      try { await db.ref(`rooms/${currentRoomId}/turnOrder`).transaction(current => { if (!current || !Array.isArray(current)) return current; return current.filter(id => id !== currentPlayerId); }); } catch(e){}
-      if (isHost && currentRoomId) { try { await db.ref(`rooms/${currentRoomId}`).remove(); } catch(e){} }
+      try {
+        // remove my player node
+        await db.ref(`rooms/${currentRoomId}/players/${currentPlayerId}`).remove();
+      } catch(e){ console.warn(e); }
+
+      try {
+        // remove myself from turnOrder
+        await db.ref(`rooms/${currentRoomId}/turnOrder`).transaction(current => {
+          if (!current || !Array.isArray(current)) return current;
+          return current.filter(id => id !== currentPlayerId);
+        });
+      } catch(e){ console.warn(e); }
+
+      // If I am host, attempt to transfer host to another player; else do nothing (room remains)
+      if (isHost && currentRoomId) {
+        try {
+          const playersSnap = await db.ref(`rooms/${currentRoomId}/players`).get();
+          const players = playersSnap.val() || {};
+          const remainingIds = Object.keys(players);
+          if (remainingIds.length > 0) {
+            // choose new host — prefer first in turnOrder that exists
+            const orderSnap = await db.ref(`rooms/${currentRoomId}/turnOrder`).get();
+            const order = orderSnap.val() || [];
+            let newHostId = null;
+            for (let id of order) {
+              if (id && players[id]) { newHostId = id; break; }
+            }
+            if (!newHostId) newHostId = remainingIds[0];
+            const newHostUsername = players[newHostId].username || 'Host';
+            const newHostOnline = !!players[newHostId].online;
+            await db.ref(`rooms/${currentRoomId}/host`).set({ playerId: newHostId, username: newHostUsername, online: newHostOnline, transferredAt: Date.now() });
+            // do not remove the room; the new host client will pick up the hostRef change and set up its onDisconnect.
+          } else {
+            // no players left — remove the room
+            await db.ref(`rooms/${currentRoomId}`).remove();
+          }
+        } catch(e){ console.warn('host leave transfer failed', e); try { await db.ref(`rooms/${currentRoomId}`).remove(); } catch(e2){} }
+      }
+
+      // cancel onDisconnect handlers locally
       try { if (playerRef) playerRef.onDisconnect().cancel().catch(()=>{}); } catch(e){}
       try { if (hostRef) hostRef.onDisconnect().cancel().catch(()=>{}); } catch(e){}
       try { if (settingsRef) settingsRef.off(); } catch(e){}
+
+      // detach listeners
       try { db.ref(`rooms/${currentRoomId}/players`).off(); db.ref(`rooms/${currentRoomId}/lastResult`).off(); db.ref(`rooms/${currentRoomId}/isSpinning`).off(); db.ref(`rooms/${currentRoomId}/spinData`).off(); db.ref(`rooms/${currentRoomId}/turnOrder`).off(); db.ref(`rooms/${currentRoomId}/currentTurnIndex`).off(); } catch(e){}
+
       localStorage.removeItem(KEY_ROOM);
       currentRoomId = '';
       document.getElementById('loginArea').style.display = 'block';
       roomCardEl.style.display = 'none';
     }
 
+    // bindings
     spinBtnEl.addEventListener('click', () => doSpin());
     copyRoomBtnEl.addEventListener('click', () => { if (!currentRoomId) return; navigator.clipboard.writeText(currentRoomId).then(()=> alert('Código copiado!')); });
 
@@ -892,17 +905,20 @@
     const storedName = localStorage.getItem(KEY_NAME);
     if (storedName) usernameInputEl.value = storedName;
 
-    // allow Enter on username to focus code input
+    // username Enter -> show join box
     usernameInputEl.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') {
-        if (joinBoxEl.style.display === 'none' || joinBoxEl.style.display === '') {
-          joinBoxEl.style.display = 'block';
-        }
+        if (joinBoxEl.style.display === 'none' || joinBoxEl.style.display === '') joinBoxEl.style.display = 'block';
         joinCodeInputEl.focus();
       }
     });
 
-    // enter by URL param
+    // allow Enter on joinCodeInput to confirm
+    joinCodeInputEl.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') confirmJoinBtnEl.click();
+    });
+
+    // url param join
     const urlParams = new URLSearchParams(window.location.search);
     const roomParam = urlParams.get('room');
     if (roomParam && /^\d{6}$/.test(roomParam)) {
@@ -910,7 +926,7 @@
       joinBoxEl.style.display = 'block';
     }
 
-    // try auto-join stored room if host still online
+    // auto-join stored room if host online
     (function tryAutoJoinStored(){
       const storedRoom = localStorage.getItem(KEY_ROOM);
       const storedUser = localStorage.getItem(KEY_NAME);
@@ -925,6 +941,7 @@
         }).catch(()=>{});
       }
     })();
+
   </script>
 </body>
 </html>
