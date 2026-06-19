@@ -67,8 +67,10 @@
     .small-btn{ background:#0f2a36; color:var(--text); border:1px solid rgba(255,255,255,0.03); padding:8px 10px; border-radius:10px; cursor:pointer; }
 
     .players{ margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-    .player{ background:linear-gradient(180deg,#071a22,#04202a); padding:8px 10px; border-radius:10px; border:1px solid rgba(255,255,255,0.03); color:var(--text); display:flex; align-items:center; gap:8px; font-weight:700; }
+    .player{ background:linear-gradient(180deg,#071a22,#04202a); padding:8px 10px; border-radius:10px; border:1px solid rgba(255,255,255,0.03); color:var(--text); display:flex; align-items:center; gap:8px; font-weight:700; flex-direction:column; align-items:flex-start; }
+    .player-inner{ display:flex; align-items:center; gap:8px; width:100%; }
     .player .host-badge{ background:#ffd984; color:#2b1a00; padding:4px 8px; border-radius:999px; font-weight:800; font-size:0.75rem; }
+    .inactive-badge{ font-size:0.72rem; color:#ffced4; background:rgba(255,90,107,0.06); padding:4px 8px; border-radius:8px; border:1px solid rgba(255,90,107,0.12); margin-bottom:6px; font-weight:800; color:var(--danger); }
 
     .room-main{ margin-top:8px; display:grid; grid-template-columns:1fr 320px; gap:12px; align-items:start; min-height:0; }
     @media(max-width:980px){ .room-main{ grid-template-columns:1fr; } }
@@ -234,7 +236,7 @@
   </div>
 
   <script>
-    // Full JS (functional) — inclui criação/entrada, presence, host-transfer, spin flow
+    // Full JS (functional) — includes presence, inactive handling, host unload removal attempt
     const firebaseConfig = {
       apiKey: "AIzaSyCjfxIJyKBsg9U_GJu4JP2Taq6fMXiGpMA",
       authDomain: "roleta-ea-fc-cc40c.firebaseapp.com",
@@ -270,6 +272,7 @@
     let settingsRef = null;
 
     let latestTurnOrder = [];
+    let beforeUnloadHandler = null;
 
     // DOM refs
     const usernameInputEl = document.getElementById('usernameInput');
@@ -492,11 +495,12 @@
       playerRef = db.ref(`rooms/${code}/players/${currentPlayerId}`);
       connectedRef = db.ref('.info/connected');
 
+      // ensure player onDisconnect updates to inactive (don't remove)
       connectedRef.on('value', snap => {
         if (snap && snap.val() === true) {
           if (!onDisconnectRegistered && playerRef) {
             try {
-              // don't remove the player node on disconnect — mark as offline/inactive instead
+              // mark as offline & inactive when client disconnects
               playerRef.onDisconnect().update({
                 online: false,
                 active: false,
@@ -507,7 +511,7 @@
           }
           if (playerRef) {
             const activeNow = document.visibilityState === 'visible';
-            // keep the player node and update presence fields
+            // create/update presence
             playerRef.set({
               username: currentUsername,
               joinedAt: firebase.database.ServerValue.TIMESTAMP,
@@ -518,6 +522,8 @@
         }
       });
 
+      // host ref: listen and set onDisconnect to mark online:false by default (not remove),
+      // and register a beforeunload handler so that if host closes the tab we attempt to remove the room.
       hostRef = db.ref(`rooms/${code}/host`);
       hostRef.on('value', snap => {
         const v = snap.val();
@@ -529,6 +535,8 @@
           try {
             hostRef.update({ online:true, username: currentUsername }).catch(()=>{});
             if (!hostOnDisconnectRegistered) {
+              // when host disconnects unexpectedly, mark as offline (do NOT delete room here,
+              // we will try to delete room only in beforeunload which indicates tab close)
               hostRef.onDisconnect().update({ online:false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
               hostOnDisconnectRegistered = true;
             }
@@ -536,6 +544,21 @@
         }
         updateSpinButtonState().catch(()=>{});
       });
+
+      // register a beforeunload handler to attempt to remove the room when host actually closes the tab
+      if (!beforeUnloadHandler) {
+        beforeUnloadHandler = function () {
+          try {
+            if (currentRoomId && isHost) {
+              // try best-effort to remove entire room synchronously (may not always complete)
+              db.ref(`rooms/${currentRoomId}`).remove().catch(()=>{});
+            }
+            // if not host do nothing special (player onDisconnect will mark offline)
+          } catch (e) {}
+        };
+      }
+      // add listener (only add once)
+      window.addEventListener('beforeunload', beforeUnloadHandler);
 
       settingsRef = db.ref(`rooms/${code}/settings`);
       settingsRef.on('value', snap => {
@@ -597,15 +620,30 @@
       arr.forEach(p => {
         const el = document.createElement('div');
         el.className = 'player';
+        // show inactive badge if offline or inactive
+        const isInactive = !p.online || !p.active;
+        if (isInactive) {
+          const inactive = document.createElement('div');
+          inactive.className = 'inactive-badge';
+          inactive.textContent = 'INATIVO';
+          el.appendChild(inactive);
+        } else {
+          // keep spacing alignment
+          const spacer = document.createElement('div'); spacer.style.height='6px'; el.appendChild(spacer);
+        }
+
+        const inner = document.createElement('div');
+        inner.className = 'player-inner';
+
         if (p.id === roomHostId) {
           const hostBadge = document.createElement('span'); hostBadge.className = 'host-badge'; hostBadge.textContent = 'HOST';
-          el.appendChild(hostBadge);
+          inner.appendChild(hostBadge);
         }
         const nameSpan = document.createElement('div'); nameSpan.textContent = p.username || 'Jogador';
-        el.appendChild(nameSpan);
-        if (p.id === currentPlayerId) { const you = document.createElement('span'); you.className='meta'; you.textContent=' (Você)'; el.appendChild(you); }
+        inner.appendChild(nameSpan);
+        if (p.id === currentPlayerId) { const you = document.createElement('span'); you.className='meta'; you.textContent=' (Você)'; you.style.fontWeight='600'; inner.appendChild(you); }
         if (isHost && p.id !== currentPlayerId) {
-          const controls = document.createElement('div'); controls.style.marginLeft='8px';
+          const controls = document.createElement('div'); controls.style.marginLeft='auto';
           const removeBtn = document.createElement('button');
           removeBtn.className = 'remove-btn';
           removeBtn.textContent = 'Remover';
@@ -617,8 +655,9 @@
           removeBtn.style.cursor = 'pointer';
           removeBtn.onclick = () => { if (confirm(`Remover ${p.username || 'Jogador'} da sala?`)) hostRemovePlayer(p.id); };
           controls.appendChild(removeBtn);
-          el.appendChild(controls);
+          inner.appendChild(controls);
         }
+        el.appendChild(inner);
         playersListEl.appendChild(el);
       });
 
@@ -803,6 +842,10 @@
       try { if (hostRef) hostRef.onDisconnect().cancel().catch(()=>{}); } catch(e){}
       try { if (settingsRef) settingsRef.off(); } catch(e){}
       try { db.ref(`rooms/${currentRoomId}/players`).off(); db.ref(`rooms/${currentRoomId}/lastResult`).off(); db.ref(`rooms/${currentRoomId}/isSpinning`).off(); db.ref(`rooms/${currentRoomId}/spinData`).off(); db.ref(`rooms/${currentRoomId}/turnOrder`).off(); db.ref(`rooms/${currentRoomId}/currentTurnIndex`).off(); } catch(e){}
+      // remove beforeunload handler when leaving
+      if (beforeUnloadHandler) {
+        window.removeEventListener('beforeunload', beforeUnloadHandler);
+      }
       localStorage.removeItem(KEY_ROOM);
       currentRoomId = '';
       document.getElementById('loginArea').style.display = 'block';
@@ -811,6 +854,9 @@
 
     function cleanupLocalAfterRemoval(){
       try { db.ref(`rooms/${currentRoomId}/players/${currentPlayerId}`).off(); } catch(e){}
+      if (beforeUnloadHandler) {
+        window.removeEventListener('beforeunload', beforeUnloadHandler);
+      }
       localStorage.removeItem(KEY_ROOM);
       currentRoomId = '';
       document.getElementById('loginArea').style.display = 'block';
