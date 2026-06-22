@@ -82,7 +82,6 @@
     .turn-banner{ width:100%; border-radius:10px; padding:12px; text-align:center; margin-bottom:12px; font-weight:900; font-size:1.05rem; display:none }
     .turn-banner.you{ background:linear-gradient(90deg, rgba(16,185,129,0.12), rgba(16,185,129,0.06)); color:var(--success); border:1px solid rgba(16,185,129,0.12); }
     .turn-banner.wait-red{ background:#3a1114; color:var(--danger); border:1px solid rgba(255,77,109,0.12); }
-    .turn-banner.not-your-turn{ background:linear-gradient(90deg, rgba(255,90,107,0.12), rgba(255,90,107,0.06)); color:var(--danger); border:1px solid rgba(255,90,107,0.12); }
 
     .result{ margin-top:12px; padding:12px; border-radius:8px; border:1px solid rgba(16,185,129,0.25); display:none; background:linear-gradient(180deg,#021419,#07151b); }
 
@@ -258,7 +257,6 @@
 
     let latestTurnOrder = [];
     let inactivityCleanupInterval = null;
-    let pageUnloadTriggered = false;
 
     const usernameInputEl = document.getElementById('usernameInput');
     const createBtnEl = document.getElementById('createBtn');
@@ -420,7 +418,7 @@
           const pSnap = await db.ref(`rooms/${currentRoomId}/players/${currentPid}`).get();
           const p = pSnap.val();
           const name = p && p.username ? p.username : 'Jogador';
-          updateTurnBanner(false, `Não é sua vez de girar — vez de ${name}`, true);
+          updateTurnBanner(false, `Vez de ${name}`, true);
         }
       } catch (e) {
         console.warn('updateSpinButtonState error', e);
@@ -436,7 +434,7 @@
         turnBannerEl.style.display = 'block';
       } else {
         if (redFlag) {
-          turnBannerEl.className = 'turn-banner not-your-turn';
+          turnBannerEl.className = 'turn-banner wait-red';
           turnBannerEl.textContent = text || '';
           turnBannerEl.style.display = text ? 'block' : 'none';
         } else {
@@ -461,7 +459,6 @@
     }
 
     async function enterRoom(code, createdAsHost=false) {
-      pageUnloadTriggered = false;
       document.getElementById('loginArea').style.display = 'none';
       roomCardEl.style.display = 'block';
       roomDisplayEl.textContent = code;
@@ -555,9 +552,9 @@
       leaveBtnEl.onclick = leaveRoomCleanup;
 
       db.ref(`rooms/${code}/players/${currentPlayerId}`).on('value', snap => {
-        if (!snap.exists() && currentRoomId === code && !isHost && !pageUnloadTriggered) {
+        if (!snap.exists() && currentRoomId === code) {
           setTimeout(() => {
-            if (currentRoomId === code && !isHost && !pageUnloadTriggered) {
+            if (currentRoomId === code) {
               alert('Você foi removido/desconectado. Voltando à tela inicial.');
               cleanupLocalAfterRemoval();
             }
@@ -624,8 +621,11 @@
           removeBtn.onclick = async () => { 
             if (confirm(`Remover ${p.username || 'Jogador'} da sala?`)) {
               try {
+                // REMOVE DO PLAYERS
                 await db.ref(`rooms/${currentRoomId}/players/${p.id}`).remove();
+                // REMOVE DA TURN ORDER E NORMALIZA
                 await removeFromTurnOrderAndNormalize(p.id);
+                // ATUALIZA SPIN BUTTON STATE
                 await updateSpinButtonState();
               } catch(e) { console.warn(e); }
             }
@@ -776,7 +776,6 @@
     }
 
     async function leaveRoomCleanup(){
-      pageUnloadTriggered = true;
       if (!currentRoomId) return;
       try { await db.ref(`rooms/${currentRoomId}/players/${currentPlayerId}`).remove(); } catch(e){}
       try { await db.ref(`rooms/${currentRoomId}/turnOrder`).transaction(current => { if (!current || !Array.isArray(current)) return current; return current.filter(id => id !== currentPlayerId); }); } catch(e){}
@@ -925,21 +924,6 @@
         }).catch(()=>{});
       }
     })();
-
-    window.addEventListener('beforeunload', (e) => {
-      if (currentRoomId && !isHost) {
-        pageUnloadTriggered = true;
-      } else if (currentRoomId && isHost) {
-        pageUnloadTriggered = true;
-      }
-    });
-
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden' && currentRoomId && !isHost) {
-        pageUnloadTriggered = true;
-        leaveRoomCleanup().catch(()=>{});
-      }
-    });
   </script>
 </body>
 </html>
