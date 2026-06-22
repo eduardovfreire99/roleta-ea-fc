@@ -85,6 +85,14 @@
 
     .result{ margin-top:12px; padding:12px; border-radius:8px; border:1px solid rgba(16,185,129,0.25); display:none; background:linear-gradient(180deg,#021419,#07151b); }
 
+    .floating-modal{ position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:linear-gradient(180deg,#1a1a2e,#0f0f1e); border-radius:16px; padding:24px; box-shadow:0 20px 60px rgba(0,0,0,0.8); border:1px solid rgba(255,255,255,0.1); z-index:9999; max-width:400px; width:90%; animation:modalPop 0.3s ease; }
+    @keyframes modalPop{ from{ transform:translate(-50%,-50%) scale(0.8); opacity:0; } to{ transform:translate(-50%,-50%) scale(1); opacity:1; } }
+    .floating-modal-content{ text-align:center; }
+    .floating-modal-title{ font-size:1.2rem; font-weight:900; color:var(--text); margin:0 0 12px 0; }
+    .floating-modal-text{ font-size:1rem; color:var(--muted); margin:0 0 20px 0; }
+    .floating-modal-btn{ background:linear-gradient(90deg,var(--accent-a),var(--accent-b)); color:#021214; border:none; padding:12px 24px; border-radius:10px; font-weight:800; cursor:pointer; width:100%; }
+    .floating-modal-btn:hover{ opacity:0.9; }
+
     @media(max-width:600px){
       .app-wrap{ padding:10px; margin:8px auto; height:100vh; gap:10px; }
       .login-card{ padding:12px; border-radius:12px; }
@@ -222,6 +230,14 @@
     </div>
   </div>
 
+  <div id="floatingModal" class="floating-modal" style="display:none;">
+    <div class="floating-modal-content">
+      <h3 class="floating-modal-title" id="modalTitle">Aviso</h3>
+      <p class="floating-modal-text" id="modalText">-</p>
+      <button class="floating-modal-btn" id="modalCloseBtn">Entendido</button>
+    </div>
+  </div>
+
   <script>
     const firebaseConfig = {
       apiKey: "AIzaSyCjfxIJyKBsg9U_GJu4JP2Taq6fMXiGpMA",
@@ -257,6 +273,7 @@
 
     let latestTurnOrder = [];
     let inactivityCleanupInterval = null;
+    let isBeingRemoved = false;
 
     const usernameInputEl = document.getElementById('usernameInput');
     const createBtnEl = document.getElementById('createBtn');
@@ -287,6 +304,22 @@
     const turnInfoEl = document.getElementById('turnInfo');
     const hostStatusEl = document.getElementById('hostStatus');
     const turnBannerEl = document.getElementById('turnBanner');
+    const floatingModalEl = document.getElementById('floatingModal');
+    const modalTitleEl = document.getElementById('modalTitle');
+    const modalTextEl = document.getElementById('modalText');
+    const modalCloseBtnEl = document.getElementById('modalCloseBtn');
+
+    function showFloatingModal(title, message) {
+      modalTitleEl.textContent = title;
+      modalTextEl.textContent = message;
+      floatingModalEl.style.display = 'block';
+    }
+
+    function hideFloatingModal() {
+      floatingModalEl.style.display = 'none';
+    }
+
+    modalCloseBtnEl.addEventListener('click', hideFloatingModal);
 
     function initFirebase(){ const app = firebase.initializeApp(firebaseConfig); db = firebase.database(app); }
     initFirebase();
@@ -348,6 +381,12 @@
 
     function setActiveFlag(active) { if (!playerRef) return; playerRef.update({ active: !!active }).catch(()=>{}); }
     document.addEventListener('visibilitychange', () => { setActiveFlag(document.visibilityState === 'visible'); updateSpinButtonState().catch(()=>{}); });
+
+    window.addEventListener('beforeunload', (event) => {
+      if (currentRoomId && isHost) {
+        event.preventDefault();
+      }
+    });
 
     async function removeFromTurnOrderAndNormalize(playerId){
       if (!currentRoomId) return;
@@ -463,6 +502,7 @@
       roomCardEl.style.display = 'block';
       roomDisplayEl.textContent = code;
       currentRoomId = code;
+      isBeingRemoved = false;
 
       playerRef = db.ref(`rooms/${code}/players/${currentPlayerId}`);
       connectedRef = db.ref('.info/connected');
@@ -471,11 +511,15 @@
         if (snap && snap.val() === true) {
           if (!onDisconnectRegistered && playerRef) {
             try {
-              playerRef.onDisconnect().update({
-                online: false,
-                active: false,
-                lastSeen: firebase.database.ServerValue.TIMESTAMP
-              });
+              if (!isHost) {
+                playerRef.onDisconnect().remove();
+              } else {
+                playerRef.onDisconnect().update({
+                  online: false,
+                  active: false,
+                  lastSeen: firebase.database.ServerValue.TIMESTAMP
+                });
+              }
             } catch(e) { console.warn(e); }
             onDisconnectRegistered = true;
           }
@@ -552,9 +596,10 @@
       leaveBtnEl.onclick = leaveRoomCleanup;
 
       db.ref(`rooms/${code}/players/${currentPlayerId}`).on('value', snap => {
-        if (!snap.exists() && currentRoomId === code) {
+        if (!snap.exists() && currentRoomId === code && !isBeingRemoved) {
+          isBeingRemoved = true;
           setTimeout(() => {
-            if (currentRoomId === code) {
+            if (currentRoomId === code && !isHost) {
               alert('Você foi removido/desconectado. Voltando à tela inicial.');
               cleanupLocalAfterRemoval();
             }
@@ -621,11 +666,8 @@
           removeBtn.onclick = async () => { 
             if (confirm(`Remover ${p.username || 'Jogador'} da sala?`)) {
               try {
-                // REMOVE DO PLAYERS
                 await db.ref(`rooms/${currentRoomId}/players/${p.id}`).remove();
-                // REMOVE DA TURN ORDER E NORMALIZA
                 await removeFromTurnOrderAndNormalize(p.id);
-                // ATUALIZA SPIN BUTTON STATE
                 await updateSpinButtonState();
               } catch(e) { console.warn(e); }
             }
@@ -707,26 +749,26 @@
       if (isSpinning) return;
       const hostSnap = await db.ref(`rooms/${currentRoomId}/host`).get();
       const hostVal = hostSnap.val();
-      if (!hostVal || hostVal.online !== true) { alert('Aguardando host para girar a roleta'); return; }
+      if (!hostVal || hostVal.online !== true) { showFloatingModal('Aviso', 'Aguardando host para girar a roleta'); return; }
       const playersSnap = await db.ref(`rooms/${currentRoomId}/players`).get();
       const players = playersSnap.val() || {};
       const entries = Object.entries(players);
-      if (entries.length < 2) { alert('São necessários pelo menos 2 jogadores para girar.'); return; }
+      if (entries.length < 2) { showFloatingModal('Aviso', 'São necessários pelo menos 2 jogadores para girar.'); return; }
       const allActive = entries.every(([id,p]) => p && p.online === true && p.active === true);
-      if (!allActive) { alert('Aguardando todos os jogadores ativos na aba para girar a roleta'); return; }
+      if (!allActive) { showFloatingModal('Aviso', 'Aguardando todos os jogadores ativos na aba para girar a roleta'); return; }
       const orderSnap = await db.ref(`rooms/${currentRoomId}/turnOrder`).get();
       const order = orderSnap.val() || [];
-      if (!Array.isArray(order) || order.length === 0) { alert('Ordem inválida'); return; }
+      if (!Array.isArray(order) || order.length === 0) { showFloatingModal('Aviso', 'Ordem inválida'); return; }
       const idxSnap = await db.ref(`rooms/${currentRoomId}/currentTurnIndex`).get();
       const idx = idxSnap.exists() ? idxSnap.val() : 0;
       const currentPid = order[idx % (order.length || 1)];
-      if (currentPid !== currentPlayerId) { alert('Não é a sua vez de girar.'); return; }
+      if (currentPid !== currentPlayerId) { showFloatingModal('Não é sua vez', 'Não é sua vez de girar'); return; }
       isSpinning = true;
       spinBtnEl.disabled = true;
       resultPanelEl.style.display = 'none';
       await db.ref(`rooms/${currentRoomId}/isSpinning`).set({ playerId: currentPlayerId, username: currentUsername, startTime: Date.now() });
       const pool = getActivePool();
-      if (pool.length === 0) { alert('Nenhum time disponível'); return; }
+      if (pool.length === 0) { showFloatingModal('Aviso', 'Nenhum time disponível'); return; }
       const winnerIndex = Math.floor(Math.random()*pool.length);
       const winner = pool[winnerIndex];
       let extended=[];
