@@ -93,9 +93,6 @@
     .floating-modal-btn{ background:linear-gradient(90deg,var(--accent-a),var(--accent-b)); color:#021214; border:none; padding:12px 24px; border-radius:10px; font-weight:800; cursor:pointer; width:100%; }
     .floating-modal-btn:hover{ opacity:0.9; }
 
-    /* mobile: estamos escondendo .panel, então mostramos o histórico em outro lugar */
-    #historyListMobile { display:none; }
-
     @media(max-width:600px){
       .app-wrap{ padding:10px; margin:8px auto; height:100vh; gap:10px; }
       .login-card{ padding:12px; border-radius:12px; }
@@ -118,18 +115,6 @@
       #spinBtn{ padding:10px; font-size:0.95rem; }
       .small-btn{ padding:8px; font-size:0.88rem; border-radius:8px; }
       .left-col{ overflow:hidden; }
-
-      /* mostra histórico mobile (quando a .panel está escondida) */
-      #historyListMobile {
-        display:block;
-        max-height:220px;
-        overflow:auto;
-        margin-top:8px;
-        border-radius:8px;
-        padding:6px;
-        background:linear-gradient(180deg,#031017,#04121a);
-        border:1px solid rgba(255,255,255,0.02);
-      }
     }
 
     @media(max-width:420px){
@@ -228,9 +213,6 @@
             <div id="resultLeague" class="muted" style="margin-top:6px">-</div>
             <div id="resultPlayer" class="muted" style="margin-top:6px">-</div>
           </div>
-
-          <!-- Histórico mobile: aparece quando .panel está escondida (mobile) -->
-          <div id="historyListMobile" style="display:none;"></div>
         </div>
 
         <aside class="panel" id="rightPanel">
@@ -243,10 +225,6 @@
             <button id="shareBtn2" class="small-btn" style="flex:1;">📤 Compartilhar</button>
             <button id="leaveBtn2" class="small-btn" style="flex:1;">🚪 Sair</button>
           </div>
-
-          <!-- Histórico de giros (desktop) -->
-          <h4 style="margin-top:12px;">Histórico de giros</h4>
-          <div id="historyList" style="max-height:220px; overflow:auto; margin-top:8px; border-radius:8px; padding:6px; background:linear-gradient(180deg,#031017,#04121a); border:1px solid rgba(255,255,255,0.02);"></div>
         </aside>
       </div>
     </div>
@@ -297,8 +275,6 @@
     let inactivityCleanupInterval = null;
     let isBeingRemoved = false;
 
-    let historyRef = null;
-
     const usernameInputEl = document.getElementById('usernameInput');
     const createBtnEl = document.getElementById('createBtn');
     const showJoinBtnEl = document.getElementById('showJoinBtn');
@@ -332,10 +308,6 @@
     const modalTitleEl = document.getElementById('modalTitle');
     const modalTextEl = document.getElementById('modalText');
     const modalCloseBtnEl = document.getElementById('modalCloseBtn');
-
-    const historyListEl = document.getElementById('historyList');
-    const historyListMobileEl = document.getElementById('historyListMobile');
-    const rightPanelEl = document.getElementById('rightPanel');
 
     function showFloatingModal(title, message) {
       modalTitleEl.textContent = title;
@@ -525,19 +497,6 @@
       else { const idxSnap = await idxRef.get(); const val = idxSnap.exists() ? idxSnap.val() : 0; await idxRef.set(val % order.length); }
     }
 
-    function updateHistoryMobileVisibility() {
-      try {
-        if (!historyListMobileEl) return;
-        const rpStyle = window.getComputedStyle(rightPanelEl);
-        // se painel direito estiver escondido por CSS, mostramos o histórico mobile
-        if (rpStyle.display === 'none' || window.innerWidth <= 600) {
-          historyListMobileEl.style.display = 'block';
-        } else {
-          historyListMobileEl.style.display = 'none';
-        }
-      } catch(e) { /* ignore */ }
-    }
-
     async function enterRoom(code, createdAsHost=false) {
       document.getElementById('loginArea').style.display = 'none';
       roomCardEl.style.display = 'block';
@@ -548,17 +507,19 @@
       playerRef = db.ref(`rooms/${code}/players/${currentPlayerId}`);
       connectedRef = db.ref('.info/connected');
 
-      // <-- CORREÇÃO: NÃO remover o jogador no onDisconnect, apenas marcar offline + lastSeen
       connectedRef.on('value', snap => {
         if (snap && snap.val() === true) {
           if (!onDisconnectRegistered && playerRef) {
             try {
-              // atualiza o status no onDisconnect em vez de remover o nó
-              playerRef.onDisconnect().update({
-                online: false,
-                active: false,
-                lastSeen: firebase.database.ServerValue.TIMESTAMP
-              });
+              if (!isHost) {
+                playerRef.onDisconnect().remove();
+              } else {
+                playerRef.onDisconnect().update({
+                  online: false,
+                  active: false,
+                  lastSeen: firebase.database.ServerValue.TIMESTAMP
+                });
+              }
             } catch(e) { console.warn(e); }
             onDisconnectRegistered = true;
           }
@@ -573,7 +534,6 @@
           }
         }
       });
-      // -->
 
       hostRef = db.ref(`rooms/${code}/host`);
       hostRef.on('value', snap => {
@@ -582,16 +542,12 @@
         isHost = roomHostId === currentPlayerId;
         shareControlsEl.style.display = isHost ? 'inline-flex' : 'none';
         hostStatusEl.textContent = v ? `${v.username} (host) — ${v.online ? 'ativo' : 'ausente'}` : 'Sem host';
-
         if (isHost) {
           try {
             hostRef.update({ online:true, username: currentUsername }).catch(()=>{});
             if (!hostOnDisconnectRegistered) {
-              try {
-                // quando host desconectar, removemos o nó host (a sala é removida no leave ou por quem estiver observando)
-                hostRef.onDisconnect().remove();
-                hostOnDisconnectRegistered = true;
-              } catch(e) { console.warn('host onDisconnect remove failed', e); }
+              hostRef.onDisconnect().update({ online:false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
+              hostOnDisconnectRegistered = true;
             }
           } catch(e){}
         }
@@ -604,13 +560,6 @@
         if (isSpinning) { window.__pendingSettings = settings; showNotice('Host mudou configurações — serão aplicadas após o giro'); }
         else applySettings(settings);
         updateSpinButtonState().catch(()=>{});
-      });
-
-      // listener do histórico
-      historyRef = db.ref(`rooms/${code}/history`);
-      historyRef.on('value', snap => {
-        const h = snap.val() || {};
-        renderHistoryList(h);
       });
 
       db.ref(`rooms/${code}/turnOrder`).transaction(current => {
@@ -637,9 +586,6 @@
       setupSpinListener();
       updatePoolInfo();
       updateSpinButtonState().catch(()=>{});
-
-      // garantir visibilidade correta do histórico mobile ao entrar
-      updateHistoryMobileVisibility();
 
       copyRoomBtnEl.onclick = () => { navigator.clipboard.writeText(code).then(()=>alert('Código copiado!')); };
       shareBtnEl.onclick = () => {
@@ -817,70 +763,36 @@
       const idx = idxSnap.exists() ? idxSnap.val() : 0;
       const currentPid = order[idx % (order.length || 1)];
       if (currentPid !== currentPlayerId) { showFloatingModal('Não é sua vez', 'Não é sua vez de girar'); return; }
-
       isSpinning = true;
       spinBtnEl.disabled = true;
       resultPanelEl.style.display = 'none';
       await db.ref(`rooms/${currentRoomId}/isSpinning`).set({ playerId: currentPlayerId, username: currentUsername, startTime: Date.now() });
-
       const pool = getActivePool();
-      if (pool.length === 0) { showFloatingModal('Aviso', 'Nenhum time disponível'); isSpinning = false; await db.ref(`rooms/${currentRoomId}/isSpinning`).remove(); return; }
-
-      const winnerIndex = Math.floor(Math.random() * pool.length);
+      if (pool.length === 0) { showFloatingModal('Aviso', 'Nenhum time disponível'); return; }
+      const winnerIndex = Math.floor(Math.random()*pool.length);
       const winner = pool[winnerIndex];
-
-      const minCopies = 6;
-      const copies = Math.max(minCopies, Math.ceil(60 / Math.max(1, pool.length)));
-      let extended = [];
-      for (let i = 0; i < copies; i++) extended = extended.concat(shuffle([...pool]));
-
-      const minTarget = Math.floor(extended.length * 0.6);
-      const maxTarget = Math.max(minTarget + 5, extended.length - 5);
-      const targetIndex = Math.floor(Math.random() * (maxTarget - minTarget + 1)) + minTarget;
-
+      let extended=[];
+      for (let i=0;i<4;i++) extended = extended.concat(shuffle([...pool]));
+      const targetIndex = Math.min(60, extended.length-10);
       extended[targetIndex] = winner;
-
-      const duration = 4000 + Math.floor(Math.random() * 3000);
-
-      const spinData = {
-        items: extended.map(it => ({ name: it.name, league: it.league })),
-        targetIndex,
-        duration,
-        startTime: Date.now(),
-        playerId: currentPlayerId,
-        username: currentUsername
-      };
-
+      const spinData = { items: extended.map(it=>({name:it.name,league:it.league})), targetIndex, duration:5000, startTime:Date.now(), playerId:currentPlayerId, username:currentUsername };
       await db.ref(`rooms/${currentRoomId}/spinData`).set(spinData);
       renderSpinItems(spinData.items);
       animateToIndex(spinData.targetIndex, spinData.duration);
-
       setTimeout(async () => {
         const finalItem = (spinData && Array.isArray(spinData.items) && typeof spinData.targetIndex === 'number')
           ? spinData.items[spinData.targetIndex]
           : { name: winner.name, league: winner.league };
-
-        const resultObj = {
+        await db.ref(`rooms/${currentRoomId}/lastResult`).set({
           winner: finalItem.name,
           league: finalItem.league,
           username: currentUsername,
           playerId: currentPlayerId,
           targetIndex: spinData.targetIndex,
           timestamp: Date.now()
-        };
-
-        try {
-          await db.ref(`rooms/${currentRoomId}/lastResult`).set(resultObj);
-        } catch(e) { console.warn('Erro ao set lastResult', e); }
-
-        try {
-          await db.ref(`rooms/${currentRoomId}/history`).push(resultObj);
-        } catch(e) {
-          console.warn('Erro ao gravar histórico', e);
-        }
-
-        try { await db.ref(`rooms/${currentRoomId}/isSpinning`).remove(); } catch(e){}
-        try { await db.ref(`rooms/${currentRoomId}/spinData`).remove(); } catch(e){}
+        });
+        await db.ref(`rooms/${currentRoomId}/isSpinning`).remove();
+        await db.ref(`rooms/${currentRoomId}/spinData`).remove();
         showResult({ winner: finalItem.name, league: finalItem.league, username: currentUsername });
         await advanceTurn();
         await updateSpinButtonState();
@@ -905,65 +817,36 @@
       }
     }
 
-    // histórico
-    function formatTimestamp(ts) {
-      try {
-        const d = new Date(ts);
-        return d.toLocaleString();
-      } catch (e) { return ''; }
-    }
-
-    function renderHistoryList(histObj) {
-      const arr = Object.entries(histObj || {}).map(([key, val]) => ({ id: key, ...val }));
-      arr.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-
-      const renderInto = (containerEl) => {
-        if (!containerEl) return;
-        containerEl.innerHTML = '';
-        arr.forEach(h => {
-          const row = document.createElement('div');
-          row.style.padding = '8px';
-          row.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
-          row.style.fontSize = '0.95rem';
-          row.innerHTML = `
-            <div style="font-weight:800">${h.winner}</div>
-            <div style="font-size:0.82rem;color:var(--muted);margin-top:4px;">
-              ${h.league || '-'} — <strong style="font-weight:700">${h.username || 'Jogador'}</strong> — ${formatTimestamp(h.timestamp || 0)}
-            </div>
-          `;
-          containerEl.appendChild(row);
-        });
-        if (arr.length === 0) containerEl.innerHTML = '<div style="color:var(--muted); padding:8px;">Nenhum giro ainda</div>';
-      };
-
-      renderInto(historyListEl);
-      renderInto(historyListMobileEl);
-
-      // garantir visibilidade mobile/desktop
-      updateHistoryMobileVisibility();
-    }
-
-    // observar resize para alternar histórico mobile/desktop
-    window.addEventListener('resize', updateHistoryMobileVisibility);
-
     async function leaveRoomCleanup(){
       if (!currentRoomId) return;
       try { await db.ref(`rooms/${currentRoomId}/players/${currentPlayerId}`).remove(); } catch(e){}
       try { await db.ref(`rooms/${currentRoomId}/turnOrder`).transaction(current => { if (!current || !Array.isArray(current)) return current; return current.filter(id => id !== currentPlayerId); }); } catch(e){}
-
+      
       if (isHost && currentRoomId) {
         try {
-          // remove a sala inteira quando o host sai (fecha para os outros)
-          await db.ref(`rooms/${currentRoomId}`).remove();
-        } catch(e){ console.warn('Erro ao remover sala pelo host', e); }
+          const playersSnap = await db.ref(`rooms/${currentRoomId}/players`).get();
+          const players = playersSnap.val() || {};
+          const remainingIds = Object.keys(players);
+          if (remainingIds.length > 0) {
+            const orderSnap = await db.ref(`rooms/${currentRoomId}/turnOrder`).get();
+            const order = orderSnap.val() || [];
+            let newHostId = null;
+            for (let id of order) { if (id && players[id]) { newHostId = id; break; } }
+            if (!newHostId) newHostId = remainingIds[0];
+            const newHostUsername = players[newHostId].username || 'Host';
+            const newHostOnline = !!players[newHostId].online;
+            await db.ref(`rooms/${currentRoomId}/host`).set({ playerId: newHostId, username: newHostUsername, online: newHostOnline, transferredAt: Date.now() });
+          } else {
+            await db.ref(`rooms/${currentRoomId}`).remove();
+          }
+        } catch(e){ console.warn('host leave transfer failed', e); }
       }
-
+      
       try { if (playerRef) playerRef.onDisconnect().cancel().catch(()=>{}); } catch(e){}
       try { if (hostRef) hostRef.onDisconnect().cancel().catch(()=>{}); } catch(e){}
       try { if (settingsRef) settingsRef.off(); } catch(e){}
       try { db.ref(`rooms/${currentRoomId}/players`).off(); db.ref(`rooms/${currentRoomId}/lastResult`).off(); db.ref(`rooms/${currentRoomId}/isSpinning`).off(); db.ref(`rooms/${currentRoomId}/spinData`).off(); db.ref(`rooms/${currentRoomId}/turnOrder`).off(); db.ref(`rooms/${currentRoomId}/currentTurnIndex`).off(); } catch(e){}
-      try { if (historyRef) historyRef.off(); } catch(e){}
-
+      
       if (inactivityCleanupInterval) clearInterval(inactivityCleanupInterval);
       localStorage.removeItem(KEY_ROOM);
       currentRoomId = '';
@@ -974,7 +857,6 @@
     function cleanupLocalAfterRemoval(){
       try { db.ref(`rooms/${currentRoomId}/players/${currentPlayerId}`).off(); } catch(e){}
       if (inactivityCleanupInterval) clearInterval(inactivityCleanupInterval);
-      try { if (historyRef) historyRef.off(); } catch(e){}
       localStorage.removeItem(KEY_ROOM);
       currentRoomId = '';
       document.getElementById('loginArea').style.display = 'block';
