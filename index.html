@@ -93,6 +93,9 @@
     .floating-modal-btn{ background:linear-gradient(90deg,var(--accent-a),var(--accent-b)); color:#021214; border:none; padding:12px 24px; border-radius:10px; font-weight:800; cursor:pointer; width:100%; }
     .floating-modal-btn:hover{ opacity:0.9; }
 
+    /* mobile: estamos escondendo .panel, então mostramos o histórico em outro lugar */
+    #historyListMobile { display:none; }
+
     @media(max-width:600px){
       .app-wrap{ padding:10px; margin:8px auto; height:100vh; gap:10px; }
       .login-card{ padding:12px; border-radius:12px; }
@@ -115,6 +118,18 @@
       #spinBtn{ padding:10px; font-size:0.95rem; }
       .small-btn{ padding:8px; font-size:0.88rem; border-radius:8px; }
       .left-col{ overflow:hidden; }
+
+      /* mostra histórico mobile (quando a .panel está escondida) */
+      #historyListMobile {
+        display:block;
+        max-height:220px;
+        overflow:auto;
+        margin-top:8px;
+        border-radius:8px;
+        padding:6px;
+        background:linear-gradient(180deg,#031017,#04121a);
+        border:1px solid rgba(255,255,255,0.02);
+      }
     }
 
     @media(max-width:420px){
@@ -213,6 +228,9 @@
             <div id="resultLeague" class="muted" style="margin-top:6px">-</div>
             <div id="resultPlayer" class="muted" style="margin-top:6px">-</div>
           </div>
+
+          <!-- Histórico mobile: aparece quando .panel está escondida (mobile) -->
+          <div id="historyListMobile" style="display:none;"></div>
         </div>
 
         <aside class="panel" id="rightPanel">
@@ -226,7 +244,7 @@
             <button id="leaveBtn2" class="small-btn" style="flex:1;">🚪 Sair</button>
           </div>
 
-          <!-- Histórico de giros -->
+          <!-- Histórico de giros (desktop) -->
           <h4 style="margin-top:12px;">Histórico de giros</h4>
           <div id="historyList" style="max-height:220px; overflow:auto; margin-top:8px; border-radius:8px; padding:6px; background:linear-gradient(180deg,#031017,#04121a); border:1px solid rgba(255,255,255,0.02);"></div>
         </aside>
@@ -279,7 +297,6 @@
     let inactivityCleanupInterval = null;
     let isBeingRemoved = false;
 
-    // Histórico
     let historyRef = null;
 
     const usernameInputEl = document.getElementById('usernameInput');
@@ -317,6 +334,7 @@
     const modalCloseBtnEl = document.getElementById('modalCloseBtn');
 
     const historyListEl = document.getElementById('historyList');
+    const historyListMobileEl = document.getElementById('historyListMobile');
 
     function showFloatingModal(title, message) {
       modalTitleEl.textContent = title;
@@ -523,6 +541,7 @@
               if (!isHost) {
                 playerRef.onDisconnect().remove();
               } else {
+                // keep host marked differently on disconnect removal is handled for hostRef below
                 playerRef.onDisconnect().update({
                   online: false,
                   active: false,
@@ -551,12 +570,16 @@
         isHost = roomHostId === currentPlayerId;
         shareControlsEl.style.display = isHost ? 'inline-flex' : 'none';
         hostStatusEl.textContent = v ? `${v.username} (host) — ${v.online ? 'ativo' : 'ausente'}` : 'Sem host';
+
         if (isHost) {
           try {
             hostRef.update({ online:true, username: currentUsername }).catch(()=>{});
             if (!hostOnDisconnectRegistered) {
-              hostRef.onDisconnect().update({ online:false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
-              hostOnDisconnectRegistered = true;
+              // Quando host desconectar (queda de conexão ou fechar pagina), removemos a sala inteira
+              try {
+                hostRef.onDisconnect().remove();
+                hostOnDisconnectRegistered = true;
+              } catch(e) { console.warn('host onDisconnect remove failed', e); }
             }
           } catch(e){}
         }
@@ -760,7 +783,6 @@
       });
     }
 
-    // função doSpin substituída: roleta mais aleatória e registro no histórico
     async function doSpin(){
       if (!currentRoomId) return;
       if (isSpinning) return;
@@ -789,25 +811,20 @@
       const pool = getActivePool();
       if (pool.length === 0) { showFloatingModal('Aviso', 'Nenhum time disponível'); isSpinning = false; await db.ref(`rooms/${currentRoomId}/isSpinning`).remove(); return; }
 
-      // escolhe vencedor aleatoriamente
       const winnerIndex = Math.floor(Math.random() * pool.length);
       const winner = pool[winnerIndex];
 
-      // monta um array longo com várias cópias embaralhadas do pool para simular várias voltas
-      const minCopies = 6; // pelo menos 6 cópias
+      const minCopies = 6;
       const copies = Math.max(minCopies, Math.ceil(60 / Math.max(1, pool.length)));
       let extended = [];
       for (let i = 0; i < copies; i++) extended = extended.concat(shuffle([...pool]));
 
-      // escolhe um índice alvo aleatório dentro da parte final do array (para parecer que fez várias voltas)
       const minTarget = Math.floor(extended.length * 0.6);
       const maxTarget = Math.max(minTarget + 5, extended.length - 5);
       const targetIndex = Math.floor(Math.random() * (maxTarget - minTarget + 1)) + minTarget;
 
-      // garante que o vencedor esteja na posição alvo (substitui essa posição)
       extended[targetIndex] = winner;
 
-      // escolhe duração aleatória entre ~4s e ~7s
       const duration = 4000 + Math.floor(Math.random() * 3000);
 
       const spinData = {
@@ -828,7 +845,6 @@
           ? spinData.items[spinData.targetIndex]
           : { name: winner.name, league: winner.league };
 
-        // salva o resultado
         const resultObj = {
           winner: finalItem.name,
           league: finalItem.league,
@@ -842,7 +858,6 @@
           await db.ref(`rooms/${currentRoomId}/lastResult`).set(resultObj);
         } catch(e) { console.warn('Erro ao set lastResult', e); }
 
-        // grava no histórico (push para preservar ordem)
         try {
           await db.ref(`rooms/${currentRoomId}/history`).push(resultObj);
         } catch(e) {
@@ -875,7 +890,7 @@
       }
     }
 
-    // --- Histórico: render e formatação ---
+    // histórico
     function formatTimestamp(ts) {
       try {
         const d = new Date(ts);
@@ -884,53 +899,44 @@
     }
 
     function renderHistoryList(histObj) {
-      if (!historyListEl) return;
-      historyListEl.innerHTML = '';
-      const entries = Object.entries(histObj || {}).map(([key, val]) => ({ id: key, ...val }));
-      entries.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      entries.forEach(h => {
-        const row = document.createElement('div');
-        row.style.padding = '8px';
-        row.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
-        row.style.fontSize = '0.95rem';
-        row.innerHTML = `
-          <div style="font-weight:800">${h.winner}</div>
-          <div style="font-size:0.82rem;color:var(--muted);margin-top:4px;">
-            ${h.league || '-'} — <strong style="font-weight:700">${h.username || 'Jogador'}</strong> — ${formatTimestamp(h.timestamp || 0)}
-          </div>
-        `;
-        historyListEl.appendChild(row);
-      });
-      if (entries.length === 0) {
-        historyListEl.innerHTML = '<div style="color:var(--muted); padding:8px;">Nenhum giro ainda</div>';
-      }
+      const arr = Object.entries(histObj || {}).map(([key, val]) => ({ id: key, ...val }));
+      arr.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+      const renderInto = (containerEl) => {
+        if (!containerEl) return;
+        containerEl.innerHTML = '';
+        arr.forEach(h => {
+          const row = document.createElement('div');
+          row.style.padding = '8px';
+          row.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
+          row.style.fontSize = '0.95rem';
+          row.innerHTML = `
+            <div style="font-weight:800">${h.winner}</div>
+            <div style="font-size:0.82rem;color:var(--muted);margin-top:4px;">
+              ${h.league || '-'} — <strong style="font-weight:700">${h.username || 'Jogador'}</strong> — ${formatTimestamp(h.timestamp || 0)}
+            </div>
+          `;
+          containerEl.appendChild(row);
+        });
+        if (arr.length === 0) containerEl.innerHTML = '<div style="color:var(--muted); padding:8px;">Nenhum giro ainda</div>';
+      };
+
+      renderInto(historyListEl);
+      renderInto(historyListMobileEl);
     }
 
     async function leaveRoomCleanup(){
       if (!currentRoomId) return;
       try { await db.ref(`rooms/${currentRoomId}/players/${currentPlayerId}`).remove(); } catch(e){}
       try { await db.ref(`rooms/${currentRoomId}/turnOrder`).transaction(current => { if (!current || !Array.isArray(current)) return current; return current.filter(id => id !== currentPlayerId); }); } catch(e){}
-      
+
       if (isHost && currentRoomId) {
         try {
-          const playersSnap = await db.ref(`rooms/${currentRoomId}/players`).get();
-          const players = playersSnap.val() || {};
-          const remainingIds = Object.keys(players);
-          if (remainingIds.length > 0) {
-            const orderSnap = await db.ref(`rooms/${currentRoomId}/turnOrder`).get();
-            const order = orderSnap.val() || [];
-            let newHostId = null;
-            for (let id of order) { if (id && players[id]) { newHostId = id; break; } }
-            if (!newHostId) newHostId = remainingIds[0];
-            const newHostUsername = players[newHostId].username || 'Host';
-            const newHostOnline = !!players[newHostId].online;
-            await db.ref(`rooms/${currentRoomId}/host`).set({ playerId: newHostId, username: newHostUsername, online: newHostOnline, transferredAt: Date.now() });
-          } else {
-            await db.ref(`rooms/${currentRoomId}`).remove();
-          }
-        } catch(e){ console.warn('host leave transfer failed', e); }
+          // remove a sala inteira quando o host sai (fecha para os outros)
+          await db.ref(`rooms/${currentRoomId}`).remove();
+        } catch(e){ console.warn('Erro ao remover sala pelo host', e); }
       }
-      
+
       try { if (playerRef) playerRef.onDisconnect().cancel().catch(()=>{}); } catch(e){}
       try { if (hostRef) hostRef.onDisconnect().cancel().catch(()=>{}); } catch(e){}
       try { if (settingsRef) settingsRef.off(); } catch(e){}
