@@ -335,6 +335,7 @@
 
     const historyListEl = document.getElementById('historyList');
     const historyListMobileEl = document.getElementById('historyListMobile');
+    const rightPanelEl = document.getElementById('rightPanel');
 
     function showFloatingModal(title, message) {
       modalTitleEl.textContent = title;
@@ -524,6 +525,19 @@
       else { const idxSnap = await idxRef.get(); const val = idxSnap.exists() ? idxSnap.val() : 0; await idxRef.set(val % order.length); }
     }
 
+    function updateHistoryMobileVisibility() {
+      try {
+        if (!historyListMobileEl) return;
+        const rpStyle = window.getComputedStyle(rightPanelEl);
+        // se painel direito estiver escondido por CSS, mostramos o histórico mobile
+        if (rpStyle.display === 'none' || window.innerWidth <= 600) {
+          historyListMobileEl.style.display = 'block';
+        } else {
+          historyListMobileEl.style.display = 'none';
+        }
+      } catch(e) { /* ignore */ }
+    }
+
     async function enterRoom(code, createdAsHost=false) {
       document.getElementById('loginArea').style.display = 'none';
       roomCardEl.style.display = 'block';
@@ -541,7 +555,6 @@
               if (!isHost) {
                 playerRef.onDisconnect().remove();
               } else {
-                // keep host marked differently on disconnect removal is handled for hostRef below
                 playerRef.onDisconnect().update({
                   online: false,
                   active: false,
@@ -575,7 +588,6 @@
           try {
             hostRef.update({ online:true, username: currentUsername }).catch(()=>{});
             if (!hostOnDisconnectRegistered) {
-              // Quando host desconectar (queda de conexão ou fechar pagina), removemos a sala inteira
               try {
                 hostRef.onDisconnect().remove();
                 hostOnDisconnectRegistered = true;
@@ -625,6 +637,9 @@
       setupSpinListener();
       updatePoolInfo();
       updateSpinButtonState().catch(()=>{});
+
+      // garantir visibilidade correta do histórico mobile ao entrar
+      updateHistoryMobileVisibility();
 
       copyRoomBtnEl.onclick = () => { navigator.clipboard.writeText(code).then(()=>alert('Código copiado!')); };
       shareBtnEl.onclick = () => {
@@ -923,7 +938,13 @@
 
       renderInto(historyListEl);
       renderInto(historyListMobileEl);
+
+      // garantir visibilidade mobile/desktop
+      updateHistoryMobileVisibility();
     }
+
+    // observar resize para alternar histórico mobile/desktop
+    window.addEventListener('resize', updateHistoryMobileVisibility);
 
     async function leaveRoomCleanup(){
       if (!currentRoomId) return;
