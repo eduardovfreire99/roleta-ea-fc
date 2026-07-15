@@ -225,6 +225,10 @@
             <button id="shareBtn2" class="small-btn" style="flex:1;">📤 Compartilhar</button>
             <button id="leaveBtn2" class="small-btn" style="flex:1;">🚪 Sair</button>
           </div>
+
+          <!-- Histórico de giros -->
+          <h4 style="margin-top:12px;">Histórico de giros</h4>
+          <div id="historyList" style="max-height:220px; overflow:auto; margin-top:8px; border-radius:8px; padding:6px; background:linear-gradient(180deg,#031017,#04121a); border:1px solid rgba(255,255,255,0.02);"></div>
         </aside>
       </div>
     </div>
@@ -275,6 +279,9 @@
     let inactivityCleanupInterval = null;
     let isBeingRemoved = false;
 
+    // Histórico
+    let historyRef = null;
+
     const usernameInputEl = document.getElementById('usernameInput');
     const createBtnEl = document.getElementById('createBtn');
     const showJoinBtnEl = document.getElementById('showJoinBtn');
@@ -308,6 +315,8 @@
     const modalTitleEl = document.getElementById('modalTitle');
     const modalTextEl = document.getElementById('modalText');
     const modalCloseBtnEl = document.getElementById('modalCloseBtn');
+
+    const historyListEl = document.getElementById('historyList');
 
     function showFloatingModal(title, message) {
       modalTitleEl.textContent = title;
@@ -562,6 +571,13 @@
         updateSpinButtonState().catch(()=>{});
       });
 
+      // listener do histórico
+      historyRef = db.ref(`rooms/${code}/history`);
+      historyRef.on('value', snap => {
+        const h = snap.val() || {};
+        renderHistoryList(h);
+      });
+
       db.ref(`rooms/${code}/turnOrder`).transaction(current => {
         if (!current) return [currentPlayerId];
         if (!Array.isArray(current)) return [currentPlayerId];
@@ -744,6 +760,7 @@
       });
     }
 
+    // função doSpin substituída: roleta mais aleatória e registro no histórico
     async function doSpin(){
       if (!currentRoomId) return;
       if (isSpinning) return;
@@ -763,36 +780,77 @@
       const idx = idxSnap.exists() ? idxSnap.val() : 0;
       const currentPid = order[idx % (order.length || 1)];
       if (currentPid !== currentPlayerId) { showFloatingModal('Não é sua vez', 'Não é sua vez de girar'); return; }
+
       isSpinning = true;
       spinBtnEl.disabled = true;
       resultPanelEl.style.display = 'none';
       await db.ref(`rooms/${currentRoomId}/isSpinning`).set({ playerId: currentPlayerId, username: currentUsername, startTime: Date.now() });
+
       const pool = getActivePool();
-      if (pool.length === 0) { showFloatingModal('Aviso', 'Nenhum time disponível'); return; }
-      const winnerIndex = Math.floor(Math.random()*pool.length);
+      if (pool.length === 0) { showFloatingModal('Aviso', 'Nenhum time disponível'); isSpinning = false; await db.ref(`rooms/${currentRoomId}/isSpinning`).remove(); return; }
+
+      // escolhe vencedor aleatoriamente
+      const winnerIndex = Math.floor(Math.random() * pool.length);
       const winner = pool[winnerIndex];
-      let extended=[];
-      for (let i=0;i<4;i++) extended = extended.concat(shuffle([...pool]));
-      const targetIndex = Math.min(60, extended.length-10);
+
+      // monta um array longo com várias cópias embaralhadas do pool para simular várias voltas
+      const minCopies = 6; // pelo menos 6 cópias
+      const copies = Math.max(minCopies, Math.ceil(60 / Math.max(1, pool.length)));
+      let extended = [];
+      for (let i = 0; i < copies; i++) extended = extended.concat(shuffle([...pool]));
+
+      // escolhe um índice alvo aleatório dentro da parte final do array (para parecer que fez várias voltas)
+      const minTarget = Math.floor(extended.length * 0.6);
+      const maxTarget = Math.max(minTarget + 5, extended.length - 5);
+      const targetIndex = Math.floor(Math.random() * (maxTarget - minTarget + 1)) + minTarget;
+
+      // garante que o vencedor esteja na posição alvo (substitui essa posição)
       extended[targetIndex] = winner;
-      const spinData = { items: extended.map(it=>({name:it.name,league:it.league})), targetIndex, duration:5000, startTime:Date.now(), playerId:currentPlayerId, username:currentUsername };
+
+      // escolhe duração aleatória entre ~4s e ~7s
+      const duration = 4000 + Math.floor(Math.random() * 3000);
+
+      const spinData = {
+        items: extended.map(it => ({ name: it.name, league: it.league })),
+        targetIndex,
+        duration,
+        startTime: Date.now(),
+        playerId: currentPlayerId,
+        username: currentUsername
+      };
+
       await db.ref(`rooms/${currentRoomId}/spinData`).set(spinData);
       renderSpinItems(spinData.items);
       animateToIndex(spinData.targetIndex, spinData.duration);
+
       setTimeout(async () => {
         const finalItem = (spinData && Array.isArray(spinData.items) && typeof spinData.targetIndex === 'number')
           ? spinData.items[spinData.targetIndex]
           : { name: winner.name, league: winner.league };
-        await db.ref(`rooms/${currentRoomId}/lastResult`).set({
+
+        // salva o resultado
+        const resultObj = {
           winner: finalItem.name,
           league: finalItem.league,
           username: currentUsername,
           playerId: currentPlayerId,
           targetIndex: spinData.targetIndex,
           timestamp: Date.now()
-        });
-        await db.ref(`rooms/${currentRoomId}/isSpinning`).remove();
-        await db.ref(`rooms/${currentRoomId}/spinData`).remove();
+        };
+
+        try {
+          await db.ref(`rooms/${currentRoomId}/lastResult`).set(resultObj);
+        } catch(e) { console.warn('Erro ao set lastResult', e); }
+
+        // grava no histórico (push para preservar ordem)
+        try {
+          await db.ref(`rooms/${currentRoomId}/history`).push(resultObj);
+        } catch(e) {
+          console.warn('Erro ao gravar histórico', e);
+        }
+
+        try { await db.ref(`rooms/${currentRoomId}/isSpinning`).remove(); } catch(e){}
+        try { await db.ref(`rooms/${currentRoomId}/spinData`).remove(); } catch(e){}
         showResult({ winner: finalItem.name, league: finalItem.league, username: currentUsername });
         await advanceTurn();
         await updateSpinButtonState();
@@ -814,6 +872,37 @@
       if (window.__pendingSettings) {
         applySettings(window.__pendingSettings);
         window.__pendingSettings = null;
+      }
+    }
+
+    // --- Histórico: render e formatação ---
+    function formatTimestamp(ts) {
+      try {
+        const d = new Date(ts);
+        return d.toLocaleString();
+      } catch (e) { return ''; }
+    }
+
+    function renderHistoryList(histObj) {
+      if (!historyListEl) return;
+      historyListEl.innerHTML = '';
+      const entries = Object.entries(histObj || {}).map(([key, val]) => ({ id: key, ...val }));
+      entries.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      entries.forEach(h => {
+        const row = document.createElement('div');
+        row.style.padding = '8px';
+        row.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
+        row.style.fontSize = '0.95rem';
+        row.innerHTML = `
+          <div style="font-weight:800">${h.winner}</div>
+          <div style="font-size:0.82rem;color:var(--muted);margin-top:4px;">
+            ${h.league || '-'} — <strong style="font-weight:700">${h.username || 'Jogador'}</strong> — ${formatTimestamp(h.timestamp || 0)}
+          </div>
+        `;
+        historyListEl.appendChild(row);
+      });
+      if (entries.length === 0) {
+        historyListEl.innerHTML = '<div style="color:var(--muted); padding:8px;">Nenhum giro ainda</div>';
       }
     }
 
@@ -846,7 +935,8 @@
       try { if (hostRef) hostRef.onDisconnect().cancel().catch(()=>{}); } catch(e){}
       try { if (settingsRef) settingsRef.off(); } catch(e){}
       try { db.ref(`rooms/${currentRoomId}/players`).off(); db.ref(`rooms/${currentRoomId}/lastResult`).off(); db.ref(`rooms/${currentRoomId}/isSpinning`).off(); db.ref(`rooms/${currentRoomId}/spinData`).off(); db.ref(`rooms/${currentRoomId}/turnOrder`).off(); db.ref(`rooms/${currentRoomId}/currentTurnIndex`).off(); } catch(e){}
-      
+      try { if (historyRef) historyRef.off(); } catch(e){}
+
       if (inactivityCleanupInterval) clearInterval(inactivityCleanupInterval);
       localStorage.removeItem(KEY_ROOM);
       currentRoomId = '';
@@ -857,6 +947,7 @@
     function cleanupLocalAfterRemoval(){
       try { db.ref(`rooms/${currentRoomId}/players/${currentPlayerId}`).off(); } catch(e){}
       if (inactivityCleanupInterval) clearInterval(inactivityCleanupInterval);
+      try { if (historyRef) historyRef.off(); } catch(e){}
       localStorage.removeItem(KEY_ROOM);
       currentRoomId = '';
       document.getElementById('loginArea').style.display = 'block';
