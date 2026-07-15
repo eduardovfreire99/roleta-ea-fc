@@ -548,19 +548,17 @@
       playerRef = db.ref(`rooms/${code}/players/${currentPlayerId}`);
       connectedRef = db.ref('.info/connected');
 
+      // <-- CORREÇÃO: NÃO remover o jogador no onDisconnect, apenas marcar offline + lastSeen
       connectedRef.on('value', snap => {
         if (snap && snap.val() === true) {
           if (!onDisconnectRegistered && playerRef) {
             try {
-              if (!isHost) {
-                playerRef.onDisconnect().remove();
-              } else {
-                playerRef.onDisconnect().update({
-                  online: false,
-                  active: false,
-                  lastSeen: firebase.database.ServerValue.TIMESTAMP
-                });
-              }
+              // atualiza o status no onDisconnect em vez de remover o nó
+              playerRef.onDisconnect().update({
+                online: false,
+                active: false,
+                lastSeen: firebase.database.ServerValue.TIMESTAMP
+              });
             } catch(e) { console.warn(e); }
             onDisconnectRegistered = true;
           }
@@ -575,6 +573,7 @@
           }
         }
       });
+      // -->
 
       hostRef = db.ref(`rooms/${code}/host`);
       hostRef.on('value', snap => {
@@ -589,6 +588,7 @@
             hostRef.update({ online:true, username: currentUsername }).catch(()=>{});
             if (!hostOnDisconnectRegistered) {
               try {
+                // quando host desconectar, removemos o nó host (a sala é removida no leave ou por quem estiver observando)
                 hostRef.onDisconnect().remove();
                 hostOnDisconnectRegistered = true;
               } catch(e) { console.warn('host onDisconnect remove failed', e); }
