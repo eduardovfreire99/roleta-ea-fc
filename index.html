@@ -769,13 +769,35 @@
       await db.ref(`rooms/${currentRoomId}/isSpinning`).set({ playerId: currentPlayerId, username: currentUsername, startTime: Date.now() });
       const pool = getActivePool();
       if (pool.length === 0) { showFloatingModal('Aviso', 'Nenhum time disponível'); return; }
+
+      // --- ALTERAÇÃO: tornar a posição final mais aleatória ---
       const winnerIndex = Math.floor(Math.random()*pool.length);
       const winner = pool[winnerIndex];
-      let extended=[];
-      for (let i=0;i<4;i++) extended = extended.concat(shuffle([...pool]));
-      const targetIndex = Math.min(60, extended.length-10);
+
+      // Escolhe um número aleatório de "ciclos" (voltas) para a roleta, para variar o comprimento total
+      const cycles = 4 + Math.floor(Math.random() * 6); // entre 4 e 9 ciclos
+      let extended = [];
+      for (let i = 0; i < cycles; i++) {
+        extended = extended.concat(shuffle([...pool]));
+      }
+
+      // duração do giro aleatória (entre 4.5s e 7s)
+      const duration = 4500 + Math.floor(Math.random() * 2500);
+
+      // calcula posição final aproximada para o vencedor: coloca o vencedor próximo ao fim, com pequeno jitter
+      const baseFinalPos = (cycles - 1) * pool.length + winnerIndex;
+      const jitterRange = Math.min(6, pool.length); // não jitterar além do tamanho do pool
+      const jitter = Math.floor((Math.random() - 0.5) * jitterRange); // pode ser negativo ou positivo
+      let targetIndex = baseFinalPos + jitter;
+      if (targetIndex < 0) targetIndex = 0;
+      if (targetIndex >= extended.length) targetIndex = extended.length - 1;
+
+      // garante que o vencedor esteja na posição final escolhida
       extended[targetIndex] = winner;
-      const spinData = { items: extended.map(it=>({name:it.name,league:it.league})), targetIndex, duration:5000, startTime:Date.now(), playerId:currentPlayerId, username:currentUsername };
+
+      const spinData = { items: extended.map(it=>({name:it.name,league:it.league})), targetIndex, duration: duration, startTime:Date.now(), playerId:currentPlayerId, username:currentUsername };
+      // --- FIM DA ALTERAÇÃO ---
+
       await db.ref(`rooms/${currentRoomId}/spinData`).set(spinData);
       renderSpinItems(spinData.items);
       animateToIndex(spinData.targetIndex, spinData.duration);
